@@ -2,6 +2,10 @@ name: Personal iPhone build
 
 on:
   workflow_dispatch:
+  push:
+    branches: [fix/personal-ios-service-config]
+    paths-ignore:
+      - '**.md'
 
 permissions:
   contents: read
@@ -10,9 +14,35 @@ jobs:
   build:
     runs-on: macos-15
     timeout-minutes: 45
+    # 与正式构建共用仓库变量；值通过环境变量写入文件，避免 shell 插值。
+    env:
+      API_BASE_URL: ${{ vars.API_BASE_URL }}
+      API_CHINA_BASE_URL: ${{ vars.API_CHINA_BASE_URL }}
+      POSTHOG_HOST: ${{ vars.POSTHOG_HOST }}
+      SUPABASE_URL: ${{ vars.SUPABASE_URL }}
+      CHINA_SUPABASE_URL: ${{ vars.CHINA_SUPABASE_URL }}
+      SUPABASE_PUBLISHABLE_KEY: ${{ vars.SUPABASE_PUBLISHABLE_KEY }}
+      GOOGLE_WEB_CLIENT_ID: ${{ vars.GOOGLE_WEB_CLIENT_ID }}
     steps:
       - name: Download source
         uses: actions/checkout@v4
+
+      - name: Validate and prepare service configuration
+        run: |
+          python3 - <<'PY'
+          import json, os, pathlib
+          keys = [
+              'API_BASE_URL', 'API_CHINA_BASE_URL', 'POSTHOG_HOST',
+              'SUPABASE_URL', 'CHINA_SUPABASE_URL',
+              'SUPABASE_PUBLISHABLE_KEY', 'GOOGLE_WEB_CLIENT_ID',
+          ]
+          # 空值不覆盖客户端默认的公开服务地址；无认证配置时核心学习仍可用。
+          values = {key: os.environ[key].strip() for key in keys
+                    if os.environ.get(key, '').strip()}
+          # 配置文件不加入安装包，也不向日志输出值。
+          pathlib.Path('personal-service-config.json').write_text(
+              json.dumps(values), encoding='utf-8')
+          PY
 
       - name: Install Flutter
         uses: subosito/flutter-action@v2
@@ -37,8 +67,15 @@ jobs:
           gem install cocoapods -v 1.16.2 --no-document
           pod _1.16.2_ install
 
+      - name: Verify public resources and offline translations
+        run: |
+          flutter analyze lib/data/bundled_chinese_translations.dart lib/widgets/practice/sentence_explanation_view.dart lib/features/community_collections/screens test/data/bundled_chinese_translations_test.dart test/features/community_collections/discover_collections_screen_test.dart test/features/community_collections/community_collection_detail_screen_test.dart
+          flutter test --concurrency=1 test/data/bundled_chinese_translations_test.dart test/features/community_collections/discover_collections_screen_test.dart test/features/community_collections/community_collection_detail_screen_test.dart test/widgets/sentence_explanation_view_auth_test.dart
+
       - name: Compile for iPhone
-        run: flutter build ios --release --no-codesign --flavor prod
+        run: >-
+          flutter build ios --release --no-codesign --flavor prod
+          --dart-define-from-file=personal-service-config.json
 
       - name: Package unsigned IPA
         run: |

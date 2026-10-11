@@ -4,7 +4,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
-import '../../auth/sign_in_required_dialog.dart';
 import '../../../l10n/app_localizations.dart';
 import '../../../models/collection.dart';
 import '../../../providers/collection_provider.dart';
@@ -122,13 +121,8 @@ class _CommunityCollectionDetailScreenState
 
   Future<void> _enroll(BuildContext context, WidgetRef ref) async {
     final l10n = AppLocalizations.of(context)!;
-    final allowed = await ensureSignedInForAction(
-      context: context,
-      ref: ref,
-      title: l10n.communityCollectionSignInRequiredTitle,
-      message: l10n.communityCollectionSignInRequiredMessage,
-    );
-    if (!allowed || !context.mounted) return;
+    // 公开 v2 合集只写本地资料库，不需要账号或私有接口。
+    if (!context.mounted) return;
     try {
       await ref
           .read(communityEnrollmentProvider.notifier)

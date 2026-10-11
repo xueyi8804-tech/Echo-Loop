@@ -1,3 +1,4 @@
+import 'package:echo_loop/features/community_collections/providers/community_enrollment_provider.dart';
 import 'package:echo_loop/features/community_collections/models/community_collection_models.dart';
 import 'package:echo_loop/features/community_collections/models/community_collection_paging.dart';
 import 'package:echo_loop/features/community_collections/providers/community_collection_detail_provider.dart';
@@ -43,12 +44,15 @@ void main() {
   Future<void> pumpDetail(
     WidgetTester tester, {
     bool subscribed = false,
+    CommunityEnrollment? enrollment,
     _TestCommunityCollectionFiles? detailNotifier,
   }) async {
     await tester.pumpWidget(
       createTestApp(
         const CommunityCollectionDetailScreen(remoteId: 'collection-1'),
         overrides: [
+          if (enrollment != null)
+            communityEnrollmentProvider.overrideWith(() => enrollment),
           discoverCommunityCollectionsProvider.overrideWith(
             () => _TestDiscoverCommunityCollections(
               PublicCollectionCatalogEntry(
@@ -90,6 +94,15 @@ void main() {
     );
     await tester.pumpAndSettle();
   }
+
+  testWidgets('未登录也可从详情页加入公开合集', (tester) async {
+    final enrollment = _GuestEnrollment();
+    await pumpDetail(tester, enrollment: enrollment);
+    await tester.tap(find.text('Add to My Collections'));
+    await tester.pumpAndSettle();
+    expect(enrollment.enrolledIds, ['collection-1']);
+    expect(find.byType(AlertDialog), findsNothing);
+  });
 
   testWidgets('未加入合集详情显示素材数量和可用时长', (tester) async {
     await pumpDetail(tester);
@@ -307,5 +320,18 @@ class _TestCommunityCollectionFiles extends CommunityCollectionFiles {
   Future<void> refresh({bool force = false}) async {
     refreshCalls++;
     if (force) forceRefreshCalls++;
+  }
+}
+
+class _GuestEnrollment extends CommunityEnrollment {
+  final enrolledIds = <String>[];
+
+  @override
+  void build() {}
+
+  @override
+  Future<CommunityEnrollResult> enroll(String remoteId) async {
+    enrolledIds.add(remoteId);
+    return const CommunityEnrollResult(localCollectionId: 'local-guest', createdNew: true);
   }
 }

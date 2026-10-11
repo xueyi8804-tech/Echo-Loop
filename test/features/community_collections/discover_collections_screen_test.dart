@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:echo_loop/features/community_collections/providers/community_enrollment_provider.dart';
 import 'package:echo_loop/features/community_collections/data/community_sync_service.dart';
 import 'package:echo_loop/features/community_collections/models/community_collection_models.dart';
 import 'package:echo_loop/features/community_collections/models/community_collection_paging.dart';
@@ -16,6 +17,28 @@ import '../../helpers/test_app.dart';
 import '../../helpers/mock_providers.dart';
 
 void main() {
+  testWidgets('未登录也可从发现页加入公开合集', (tester) async {
+    final enrollment = _GuestEnrollment();
+    await tester.pumpWidget(createTestApp(
+      const DiscoverCommunityCollectionsScreen(),
+      overrides: [
+        discoverCommunityCollectionsProvider.overrideWith(
+          () => _TestDiscoverCommunityCollections(PublicCollectionCatalogEntry(
+            id: 'collection-1', name: 'Public lesson', description: null,
+            coverUrl: null, fileCount: 1, publishedAt: DateTime(2026, 1, 1),
+          )),
+        ),
+        discoverPodcastsProvider.overrideWithValue(const []),
+        communityEnrollmentProvider.overrideWith(() => enrollment),
+      ],
+    ));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byIcon(Icons.add_circle_outline));
+    await tester.pumpAndSettle();
+    expect(enrollment.enrolledIds, ['collection-1']);
+    expect(find.byType(AlertDialog), findsNothing);
+  });
+
   testWidgets('中文发现页标题显示发现资源', (tester) async {
     await tester.pumpWidget(
       createTestApp(
@@ -221,3 +244,16 @@ class _MockCommunitySyncService extends Mock implements CommunitySyncService {}
 
 class _MockPodcastCatalogService extends Mock
     implements PodcastCatalogService {}
+
+class _GuestEnrollment extends CommunityEnrollment {
+  final enrolledIds = <String>[];
+
+  @override
+  void build() {}
+
+  @override
+  Future<CommunityEnrollResult> enroll(String remoteId) async {
+    enrolledIds.add(remoteId);
+    return const CommunityEnrollResult(localCollectionId: 'local-guest', createdNew: true);
+  }
+}
