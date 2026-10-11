@@ -38,6 +38,7 @@ import '../../providers/sentence_ai_provider.dart';
 import '../../providers/settings_provider.dart';
 import '../../providers/saved_sense_group_provider.dart';
 import '../../services/app_logger.dart';
+import '../../data/bundled_chinese_translations.dart';
 import '../../services/dictionary/ai_dictionary_source.dart';
 import '../../services/transcription_api_client.dart';
 import '../../theme/app_theme.dart';
@@ -945,7 +946,11 @@ class _SentenceExplanationViewState
       return _neighborTexts(loadedSentences);
     }
 
-    final cachedTranslation = autoShowAiTranslation
+    final offlineTranslation = bundledChineseTranslation(
+      _text,
+      targetLanguage: nativeLanguage,
+    );
+    final cachedTranslation = offlineTranslation ?? (autoShowAiTranslation
         ? ai
               ?.getCachedTranslation(
                 _text,
@@ -954,7 +959,7 @@ class _SentenceExplanationViewState
                 targetLanguage: nativeLanguage,
               )
               ?.translation
-        : null;
+        : null);
     final cachedAnalysis = autoShowAiAnalysis
         ? ai?.getCachedAnalysis(_text, targetLanguage: nativeLanguage)
         : null;

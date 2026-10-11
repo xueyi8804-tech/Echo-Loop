@@ -2,6 +2,10 @@ name: Personal iPhone build
 
 on:
   workflow_dispatch:
+  push:
+    branches: [fix/personal-ios-service-config]
+    paths-ignore:
+      - '**.md'
 
 permissions:
   contents: read
@@ -26,20 +30,16 @@ jobs:
       - name: Validate and prepare service configuration
         run: |
           python3 - <<'PY'
-          import json, os, pathlib, sys
-          required = [
-              'API_BASE_URL', 'API_CHINA_BASE_URL',
+          import json, os, pathlib
+          keys = [
+              'API_BASE_URL', 'API_CHINA_BASE_URL', 'POSTHOG_HOST',
               'SUPABASE_URL', 'CHINA_SUPABASE_URL',
-              'SUPABASE_PUBLISHABLE_KEY',
+              'SUPABASE_PUBLISHABLE_KEY', 'GOOGLE_WEB_CLIENT_ID',
           ]
-          optional = ['POSTHOG_HOST', 'GOOGLE_WEB_CLIENT_ID']
-          values = {key: os.environ.get(key, '').strip() for key in required + optional}
-          missing = [key for key in required if not values[key]]
-          if missing:
-              print('::error::Missing repository Actions variables: ' + ', '.join(missing))
-              print('Configure Settings > Secrets and variables > Actions > Variables before building.')
-              sys.exit(1)
-          # 仅记录缺失变量名，不输出配置值；配置文件不加入安装包。
+          # 空值不覆盖客户端默认的公开服务地址；无认证配置时核心学习仍可用。
+          values = {key: os.environ[key].strip() for key in keys
+                    if os.environ.get(key, '').strip()}
+          # 配置文件不加入安装包，也不向日志输出值。
           pathlib.Path('personal-service-config.json').write_text(
               json.dumps(values), encoding='utf-8')
           PY
@@ -67,10 +67,10 @@ jobs:
           gem install cocoapods -v 1.16.2 --no-document
           pod _1.16.2_ install
 
-      - name: Verify authentication configuration
+      - name: Verify public resources and offline translations
         run: |
-          flutter analyze lib/config/auth_config.dart
-          flutter test test/config/auth_config_test.dart
+          flutter analyze lib/data/bundled_chinese_translations.dart lib/widgets/practice/sentence_explanation_view.dart lib/features/community_collections/screens test/data/bundled_chinese_translations_test.dart test/features/community_collections/discover_collections_screen_test.dart test/features/community_collections/community_collection_detail_screen_test.dart
+          flutter test --concurrency=1 test/data/bundled_chinese_translations_test.dart test/features/community_collections/discover_collections_screen_test.dart test/features/community_collections/community_collection_detail_screen_test.dart test/widgets/sentence_explanation_view_auth_test.dart
 
       - name: Compile for iPhone
         run: >-
