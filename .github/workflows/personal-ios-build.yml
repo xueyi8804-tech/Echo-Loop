@@ -35,7 +35,7 @@ jobs:
         working-directory: ios
         run: |
           gem install cocoapods -v 1.16.2 --no-document
-          pod _1.16.2_ install --deployment
+          pod _1.16.2_ install
 
       - name: Compile for iPhone
         run: flutter build ios --release --no-codesign --flavor prod
