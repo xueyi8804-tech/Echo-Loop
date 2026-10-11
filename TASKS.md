@@ -68,6 +68,8 @@
 
 ## 优先处理
 
+- [ ] 验证个人 iPhone 构建服务配置修复（2026-10-11）：个人构建与 CI 共用 API、Supabase 仓库变量；打包前检查缺失值，配置文件不进入安装包，增加认证配置定向分析与测试。修复位于 `fix/personal-ios-service-config`；尚待 CI、个人构建及真机登录/资源加入/翻译验证。本机终端无法启动，未运行 `scripts/check.sh`；本次只修改个人构建流程，不涉及核心模块。
+
 - [ ] 实测 WebView 移动内容模式与 User-Agent：macOS 完整重启 App 后确认有道等词典是否显示移动布局；如仍为桌面版，再收集页面实际 User-Agent 与 viewport 宽度。
 - [ ] 修复 macOS 网页词典首帧黑闪：继续隔离原生 WebView 创建与 Flutter 合成时序，保持内容尽早显示且不修改插件源码。
 - [ ] Android 离线 ASR 结束录音闪退：获取真机 `logcat` 与 `/data/tombstones`，定位并修复 Silero VAD native 崩溃。
