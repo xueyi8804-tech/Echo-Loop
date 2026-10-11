@@ -10,9 +10,39 @@ jobs:
   build:
     runs-on: macos-15
     timeout-minutes: 45
+    # 与正式构建共用仓库变量；值通过环境变量写入文件，避免 shell 插值。
+    env:
+      API_BASE_URL: ${{ vars.API_BASE_URL }}
+      API_CHINA_BASE_URL: ${{ vars.API_CHINA_BASE_URL }}
+      POSTHOG_HOST: ${{ vars.POSTHOG_HOST }}
+      SUPABASE_URL: ${{ vars.SUPABASE_URL }}
+      CHINA_SUPABASE_URL: ${{ vars.CHINA_SUPABASE_URL }}
+      SUPABASE_PUBLISHABLE_KEY: ${{ vars.SUPABASE_PUBLISHABLE_KEY }}
+      GOOGLE_WEB_CLIENT_ID: ${{ vars.GOOGLE_WEB_CLIENT_ID }}
     steps:
       - name: Download source
         uses: actions/checkout@v4
+
+      - name: Validate and prepare service configuration
+        run: |
+          python3 - <<'PY'
+          import json, os, pathlib, sys
+          required = [
+              'API_BASE_URL', 'API_CHINA_BASE_URL',
+              'SUPABASE_URL', 'CHINA_SUPABASE_URL',
+              'SUPABASE_PUBLISHABLE_KEY',
+          ]
+          optional = ['POSTHOG_HOST', 'GOOGLE_WEB_CLIENT_ID']
+          values = {key: os.environ.get(key, '').strip() for key in required + optional}
+          missing = [key for key in required if not values[key]]
+          if missing:
+              print('::error::Missing repository Actions variables: ' + ', '.join(missing))
+              print('Configure Settings > Secrets and variables > Actions > Variables before building.')
+              sys.exit(1)
+          # 仅记录缺失变量名，不输出配置值；配置文件不加入安装包。
+          pathlib.Path('personal-service-config.json').write_text(
+              json.dumps(values), encoding='utf-8')
+          PY
 
       - name: Install Flutter
         uses: subosito/flutter-action@v2
@@ -37,8 +67,15 @@ jobs:
           gem install cocoapods -v 1.16.2 --no-document
           pod _1.16.2_ install
 
+      - name: Verify authentication configuration
+        run: |
+          flutter analyze lib/config/auth_config.dart
+          flutter test test/config/auth_config_test.dart
+
       - name: Compile for iPhone
-        run: flutter build ios --release --no-codesign --flavor prod
+        run: >-
+          flutter build ios --release --no-codesign --flavor prod
+          --dart-define-from-file=personal-service-config.json
 
       - name: Package unsigned IPA
         run: |
