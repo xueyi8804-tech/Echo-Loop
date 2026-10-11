@@ -31,9 +31,6 @@ jobs:
       - name: Install locked dependencies
         run: flutter pub get --enforce-lockfile
 
-      - name: Generate project code
-        run: dart run build_runner build
-
       - name: Install locked iOS dependencies
         working-directory: ios
         run: pod install --deployment
