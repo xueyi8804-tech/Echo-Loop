@@ -1,0 +1,73 @@
+name: Personal iPhone build
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: macos-15
+    timeout-minutes: 45
+    steps:
+      - name: Download source
+        uses: actions/checkout@v4
+
+      - name: Install Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.41.5'
+          channel: stable
+          cache: true
+
+      - name: Record build environment
+        run: |
+          mkdir -p personal-build
+          git rev-parse HEAD > personal-build/source-commit.txt
+          flutter --version > personal-build/flutter-version.txt
+          xcodebuild -version > personal-build/xcode-version.txt
+
+      - name: Install locked dependencies
+        run: flutter pub get --enforce-lockfile
+
+      - name: Generate project code
+        run: dart run build_runner build
+
+      - name: Install locked iOS dependencies
+        working-directory: ios
+        run: pod install --deployment
+
+      - name: Compile for iPhone
+        run: flutter build ios --release --no-codesign --flavor prod
+
+      - name: Package unsigned IPA
+        run: |
+          set -euo pipefail
+          test -d build/ios/iphoneos/Runner.app
+          mkdir -p personal-build/staging/Payload
+          ditto build/ios/iphoneos/Runner.app personal-build/staging/Payload/Runner.app
+          ditto -c -k --keepParent personal-build/staging/Payload personal-build/EchoLoop-Personal-unsigned.ipa
+          cp pubspec.lock personal-build/pubspec.lock
+          cp ios/Podfile.lock personal-build/Podfile.lock
+          printf '%s\n' 'Unsigned IPA: sign for your device before installation.' > personal-build/README.txt
+
+      - name: Save installation package
+        uses: actions/upload-artifact@v4
+        with:
+          name: EchoLoop-Personal-unsigned
+          path: |
+            personal-build/*.ipa
+            personal-build/*.txt
+            personal-build/*.lock
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Save diagnostics on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Personal-iPhone-build-diagnostics
+          path: personal-build/*.txt
+          if-no-files-found: warn
+          retention-days: 7
