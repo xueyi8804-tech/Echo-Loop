@@ -356,6 +356,49 @@ void main() {
     await tester.pump();
   }
 
+  testWidgets('未登录且关闭自动AI时仍显示内置中文，切句不残留上一句译文', (tester) async {
+    final cacheDao = _MockCacheDao();
+    final savedSenseGroupDao = _MockSavedSenseGroupDao();
+    final ai = _RecordingSentenceAiNotifier(
+      cacheDao: cacheDao,
+      apiClient: _NoopSentenceAiApiClient(),
+    );
+    when(() => cacheDao.getByHash(any(), any())).thenAnswer((_) async => null);
+    when(savedSenseGroupDao.watchSavedPhraseTexts)
+        .thenAnswer((_) => Stream<Set<String>>.value(const {}));
+    await pumpAuthTestApp(
+      tester,
+      cacheDao: cacheDao,
+      savedSenseGroupDao: savedSenseGroupDao,
+      autoShowAiExplanation: false,
+      content: SentenceExplanationView(
+        text: 'Our class is in Room 13 on the 1st Floor.',
+        enableGuide: false,
+        aiNotifier: ai,
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('我们班在一楼的13号教室。'), findsOneWidget);
+    expect(ai.translationRequests, isEmpty);
+    expect(find.byType(AlertDialog), findsNothing);
+
+    await pumpAuthTestApp(
+      tester,
+      cacheDao: cacheDao,
+      savedSenseGroupDao: savedSenseGroupDao,
+      autoShowAiExplanation: false,
+      content: SentenceExplanationView(
+        text: 'So we finish at 6PM.',
+        enableGuide: false,
+        aiNotifier: ai,
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('所以我们下午6点下课。'), findsOneWidget);
+    expect(find.text('我们班在一楼的13号教室。'), findsNothing);
+    expect(ai.translationRequests, isEmpty);
+  });
+
   testWidgets('默认布局讲解工具栏与正文位于同一滚动区', (tester) async {
     final cacheDao = _MockCacheDao();
     final savedSenseGroupDao = _MockSavedSenseGroupDao();
