@@ -97,3 +97,12 @@
 
 - [ ] 后端账号登录会话能力。
 - [ ] 完成跨平台验证与发布准备。
+
+
+### 2026-10-12 个人 iPhone 版启动闪退
+- [x] 根据 build32 真机符号化报告定位 warmup → installTap → CreateRecordingTap 原生异常。
+- [x] 页面预热不再激活麦克风；实际开始录音检查输入格式和权限，追踪 tap 清理，恢复识别器。
+- [x] 旧 AVAudioNode tap API 的 Objective-C 异常转换为 Flutter 可显示错误，避免 Swift catch 无法捕获导致 abort。
+- [x] 添加真实 NSException 注入的原生边界检查（正常调用、异常捕获、重试）。
+- [ ] 新构建 38222385615 原生检查及 release IPA 编译通过（执行中）。
+- [ ] 真机验证 App 启动、本地/在线播放、中英对照、录音；旧 build32 已确认启动闪退，不能以此前71项检查替代验收。
