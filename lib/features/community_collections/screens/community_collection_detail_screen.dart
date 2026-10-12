@@ -185,6 +185,7 @@ class _Content extends StatelessWidget {
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context)!;
     final collection = catalogEntry;
+    final firstFile = remotePage?.items.firstOrNull;
     if (collection == null) {
       return Center(child: Text(l10n.communityCollectionDeprecated));
     }
@@ -214,9 +215,7 @@ class _Content extends StatelessWidget {
               width: double.infinity,
               child: FilledButton(
                 onPressed: onPlay != null
-                    ? (remotePage?.items.isNotEmpty ?? false)
-                        ? () => onPlay?.call(remotePage?.items.first ?? const CommunityCollectionFile(id: '', title: '', description: null, mediaType: CommunityMediaType.audio, durationSec: null, fileSizeBytes: null, difficulty: null, publishedAt: null, sortOrder: 0, mediaUrl: ''))
-                        : null
+                    ? firstFile == null ? null : () => onPlay?.call(firstFile)
                     : localId == null ? onEnroll : onLearn,
                 child: Text(
                   onPlay != null ? '在线播放第一课' : localId == null ? l10n.addToMyCollections : l10n.goLearn,
