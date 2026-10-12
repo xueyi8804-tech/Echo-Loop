@@ -8,6 +8,8 @@ on:
       - 'lib/features/community_collections/screens/**'
       - 'lib/features/community_collections/widgets/community_collection_card.dart'
       - 'lib/providers/media_engine/media_engine_provider.dart'
+      - 'lib/widgets/practice/practice_normal_mode_view.dart'
+      - 'test/widgets/practice/personal_bilingual_subtitle_test.dart'
       - 'lib/services/apple_sentence_translation.dart'
       - 'ios/Runner/AppDelegate.swift'
       - 'test/features/community_collections/online_course_player_test.dart'
@@ -69,8 +71,11 @@ jobs:
       - name: Check online playback and system translation
         run: |
           dart format lib/features/community_collections/screens/online_course_player_screen.dart lib/services/apple_sentence_translation.dart test/features/community_collections/online_course_player_test.dart test/providers/apple_sentence_translation_test.dart
-          flutter analyze lib/features/community_collections/screens/discover_collections_screen.dart lib/features/community_collections/widgets/community_collection_card.dart lib/features/community_collections/screens/community_collection_detail_screen.dart lib/features/community_collections/screens/online_course_player_screen.dart lib/providers/media_engine/media_engine_provider.dart lib/providers/sentence_ai_provider.dart lib/services/apple_sentence_translation.dart test/features/community_collections/online_course_player_test.dart test/providers/apple_sentence_translation_test.dart
+          flutter analyze lib/widgets/practice/practice_normal_mode_view.dart test/widgets/practice/personal_bilingual_subtitle_test.dart lib/features/community_collections/screens/discover_collections_screen.dart lib/features/community_collections/widgets/community_collection_card.dart lib/features/community_collections/screens/community_collection_detail_screen.dart lib/features/community_collections/screens/online_course_player_screen.dart lib/providers/media_engine/media_engine_provider.dart lib/providers/sentence_ai_provider.dart lib/services/apple_sentence_translation.dart test/features/community_collections/online_course_player_test.dart test/providers/apple_sentence_translation_test.dart
           flutter test test/features/community_collections/online_course_player_test.dart test/providers/apple_sentence_translation_test.dart test/features/community_collections/community_collection_detail_screen_test.dart
+
+          flutter test test/widgets/practice/practice_normal_mode_view_test.dart
+          flutter test --dart-define=PERSONAL_COURSES=true test/widgets/practice/personal_bilingual_subtitle_test.dart
 
       - name: Check Swift syntax
         run: xcrun swiftc -frontend -parse ios/Runner/AppDelegate.swift

@@ -9,6 +9,39 @@
 library;
 
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../data/personal_courses.dart';
+import '../../providers/sentence_ai_provider.dart';
+
+final practiceChineseSubtitleProvider =
+    FutureProvider.autoDispose.family<String, String>((ref, text) async {
+  final result = await ref.read(sentenceAiNotifierProvider)
+      .getTranslationStream(text, targetLanguage: 'zh-CN').last;
+  return result.translation;
+});
+
+/// 个人版显示字幕时同时展示中文，沿用已有翻译缓存和系统翻译入口。
+class _BilingualSubtitle extends ConsumerWidget {
+  const _BilingualSubtitle({required this.text, required this.english});
+  final String text;
+  final Widget english;
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final chinese = ref.watch(practiceChineseSubtitleProvider(text));
+    return Column(mainAxisSize: MainAxisSize.min, children: [
+      english,
+      const SizedBox(height: 16),
+      chinese.when(
+        data: (value) => Text(value, style: Theme.of(context).textTheme.bodyLarge),
+        loading: () => const Text('正在准备中文…'),
+        error: (_, _) => TextButton(
+          onPressed: () => ref.invalidate(practiceChineseSubtitleProvider(text)),
+          child: const Text('中文暂不可用，点此重试'),
+        ),
+      ),
+    ]);
+  }
+}
 
 import '../../l10n/app_localizations.dart';
 import '../../theme/app_theme.dart';
@@ -149,6 +182,10 @@ class PracticeNormalModeView extends StatelessWidget {
               showLines: showHiddenTextPlaceholderLines,
             ),
           );
+    final visibleContent = personalCoursesEnabled && isTextRevealed &&
+            sentenceText != null && sentenceText!.trim().isNotEmpty
+        ? _BilingualSubtitle(text: sentenceText!, english: subtitleContent)
+        : subtitleContent;
     final peekLabel = KeyedSubtree(
       key: peekLabelKey,
       child: _PeekLabel(isRevealed: isTextRevealed, l10n: l10n, theme: theme),
@@ -214,7 +251,7 @@ class PracticeNormalModeView extends StatelessWidget {
                                   child: Center(
                                     child: KeyedSubtree(
                                       key: subtitleContentGroupKey,
-                                      child: subtitleContent,
+                                      child: visibleContent,
                                     ),
                                   ),
                                 ),

@@ -76,4 +76,24 @@ void main() {
       messenger.setMockMethodCallHandler(AppleSentenceTranslation.channel, null);
     }
   });
+  test('整课译文保持句序并拒绝缺失句子', () async {
+    final messenger = TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+    messenger.setMockMethodCallHandler(AppleSentenceTranslation.channel, (call) async {
+      expect(call.method, 'translateBatch');
+      expect(call.arguments, {'texts': ['First.', 'Second.']});
+      return ['第一句。', '第二句。'];
+    });
+    try {
+      expect(await const AppleSentenceTranslation().translateBatch(['First.', 'Second.']),
+        ['第一句。', '第二句。']);
+      messenger.setMockMethodCallHandler(AppleSentenceTranslation.channel, (_) async => ['缺了一句']);
+      await expectLater(
+        const AppleSentenceTranslation().translateBatch(['First.', 'Second.']),
+        throwsFormatException,
+      );
+    } finally {
+      messenger.setMockMethodCallHandler(AppleSentenceTranslation.channel, null);
+    }
+  });
+
 }

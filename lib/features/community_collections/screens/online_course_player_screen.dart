@@ -7,8 +7,14 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../providers/media_engine/media_engine_provider.dart';
 import '../../../providers/sentence_ai_provider.dart';
 import '../../../services/app_logger.dart';
+import '../../../services/apple_sentence_translation.dart';
 import '../data/community_collection_api.dart';
 import '../models/community_collection_models.dart';
+
+/// 可替换的整课翻译入口，页面测试不依赖原生系统或网络翻译服务。
+final onlineCourseTranslationProvider =
+    Provider<Future<List<String>> Function(List<String>)>((ref) =>
+        const AppleSentenceTranslation().translateBatch);
 
 /// 从公开课程详情读取字幕并直接播放HTTPS媒体，不创建本地课程文件。
 class OnlineCoursePlayerScreen extends ConsumerStatefulWidget {
@@ -100,7 +106,8 @@ class _OnlineCoursePlayerScreenState extends ConsumerState<OnlineCoursePlayerScr
         _duration = duration;
         _loading = false;
       });
-      await _engine.play();
+      await _prepareChinese();
+      if (mounted && generation == _generation) await _engine.play();
     } catch (error) {
       if (!mounted || generation != _generation || _cancel.isCancelled) return;
       AppLogger.log('OnlineCourse', 'load failed: ${error.runtimeType}');
@@ -121,6 +128,44 @@ class _OnlineCoursePlayerScreenState extends ConsumerState<OnlineCoursePlayerScr
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('播放操作失败，请重试。')),
         );
+      }
+    }
+  }
+
+  /// 打开课程时准备所有字幕的中文，失败保留英文并提供整课重试。
+  Future<void> _prepareChinese() async {
+    if (_sentences.isEmpty || _translating != null) return;
+    final generation = _generation;
+    final missing = [
+      for (var index = 0; index < _sentences.length; index++)
+        if (!_translations.containsKey(index) &&
+            _sentences[index].text.trim().isNotEmpty) index,
+    ];
+    if (missing.isEmpty) return;
+    setState(() => _translating = -1);
+    try {
+      final result = await ref.read(onlineCourseTranslationProvider)(
+        missing.map((index) => _sentences[index].text).toList(),
+      );
+      if (result.length != missing.length ||
+          result.any((text) => text.trim().isEmpty)) {
+        throw const FormatException('译文不完整');
+      }
+      if (mounted && generation == _generation) {
+        setState(() {
+          for (var index = 0; index < missing.length; index++) {
+            _translations[missing[index]] = result[index];
+          }
+          _notice = null;
+        });
+      }
+    } catch (error) {
+      if (mounted && generation == _generation) {
+        setState(() => _notice = '中文尚未准备好，可重试中英对照；英文音频仍可播放。');
+      }
+    } finally {
+      if (mounted && generation == _generation) {
+        setState(() => _translating = null);
       }
     }
   }
@@ -177,8 +222,14 @@ class _OnlineCoursePlayerScreenState extends ConsumerState<OnlineCoursePlayerScr
                   ),
                   const Padding(
                     padding: EdgeInsets.all(8),
-                    child: Text('在线播放 · 点句子从这里听，点“中文”查看译文'),
+                    child: Text('在线播放 · 英文下方显示中文 · 点句子从这里听'),
                   ),
+                  if (_sentences.isNotEmpty &&
+                      _translations.length < _sentences.where((s) => s.text.trim().isNotEmpty).length)
+                    TextButton(
+                      onPressed: _translating == null ? _prepareChinese : null,
+                      child: Text(_translating == -1 ? '正在准备本课中文…' : '重试中英对照'),
+                    ),
                   Slider(
                     value: _position.inMilliseconds.toDouble()
                         .clamp(0, _duration.inMilliseconds.toDouble()),
@@ -217,7 +268,8 @@ class _OnlineCoursePlayerScreenState extends ConsumerState<OnlineCoursePlayerScr
                         selected: current,
                         title: Text(sentence.text),
                         subtitle: _translations[index] == null
-                            ? null : Text(_translations[index] ?? ''),
+                            ? Text(_translating == -1 ? '正在准备中文…' : '中文尚未准备好')
+                            : Text(_translations[index] ?? ''),
                         onTap: () => unawaited(_command(() async {
                           await _engine.seek(sentence.startTime);
                           await _engine.play();

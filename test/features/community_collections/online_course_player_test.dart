@@ -130,6 +130,10 @@ void main() {
       const OnlineCoursePlayerScreen(collectionId: 'c', file: _file),
       overrides: [
         communityCollectionApiProvider.overrideWithValue(api),
+        onlineCourseTranslationProvider.overrideWithValue((texts) async {
+          expect(texts, ['A public sentence.']);
+          return ['这是一句公开课程的字幕。'];
+        }),
         mediaEngineProvider.overrideWith(() => _PageEngine(backend)),
       ],
     ));
@@ -137,7 +141,8 @@ void main() {
     expect(backend.openCalls, [_file.mediaUrl]);
     expect(backend.playCalls, 1);
     expect(find.text('A public sentence.'), findsOneWidget);
-    expect(find.text('中文'), findsOneWidget);
+    expect(find.text('这是一句公开课程的字幕。'), findsOneWidget);
+    expect(find.text('重试中英对照'), findsNothing);
     expect(find.text('登录'), findsNothing);
     await tester.tap(find.text('A public sentence.'));
     await tester.pumpAndSettle();

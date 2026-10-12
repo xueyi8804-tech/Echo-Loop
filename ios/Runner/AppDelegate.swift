@@ -1236,6 +1236,8 @@ private final class IOSAudioDecodeHandler: NSObject {
 
 
   /// 用系统翻译界面准备语言资源；只处理个人用户主动请求的英译中。
+  private var systemTranslationIsBatch = false
+
   private func configureSystemTranslation(controller: FlutterViewController) {
     let channel = FlutterMethodChannel(
       name: "top.echo-loop/system_translation",
@@ -1243,7 +1245,7 @@ private final class IOSAudioDecodeHandler: NSObject {
     )
     systemTranslationChannel = channel
     channel.setMethodCallHandler { [weak self, weak controller] call, result in
-      guard call.method == "translate" else {
+      guard call.method == "translate" || call.method == "translateBatch" else {
         result(FlutterMethodNotImplemented)
         return
       }
@@ -1259,10 +1261,12 @@ private final class IOSAudioDecodeHandler: NSObject {
         result(FlutterError(code: "busy", message: "请等待当前翻译完成", details: nil))
         return
       }
-      guard let args = call.arguments as? [String: Any],
-            let text = args["text"] as? String,
-            !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-            text.count <= 5000 else {
+      let args = call.arguments as? [String: Any]
+      let isBatch = call.method == "translateBatch"
+      let texts = isBatch ? (args?["texts"] as? [String] ?? [])
+        : (args?["text"] as? String).map { [$0] } ?? []
+      guard !texts.isEmpty, texts.count <= 5000,
+            texts.allSatisfy({ !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && $0.count <= 5000 }) else {
         result(FlutterError(code: "invalid_text", message: "句子为空或过长", details: nil))
         return
       }
@@ -1271,8 +1275,9 @@ private final class IOSAudioDecodeHandler: NSObject {
         presenter = presented
       }
       self.systemTranslationResult = result
+      self.systemTranslationIsBatch = isBatch
       let host = UIHostingController(rootView: SystemEnglishChineseTranslationView(
-        text: text,
+        texts: texts,
         completion: { [weak self] response in
           self?.finishSystemTranslation(response)
         }
@@ -1285,15 +1290,16 @@ private final class IOSAudioDecodeHandler: NSObject {
   }
 
   /// 取消、完成和系统错误都只回调一次，并清理当前界面。
-  private func finishSystemTranslation(_ response: Result<String, Error>) {
+  private func finishSystemTranslation(_ response: Result<[String], Error>) {
     guard let result = systemTranslationResult else { return }
     systemTranslationResult = nil
     let host = systemTranslationHost
     systemTranslationHost = nil
+    let isBatch = systemTranslationIsBatch
     let finish = {
       switch response {
       case .success(let translated):
-        result(translated)
+        result(isBatch ? translated : translated.first as Any)
       case .failure(let error):
         result(FlutterError(
           code: "translation_failed",
@@ -1428,13 +1434,13 @@ private final class IOSAudioDecodeHandler: NSObject {
 /// translationTask提供允许征求语言下载许可的系统会话，设备不支持时由桥接层明确报错。
 @available(iOS 18.0, *)
 private struct SystemEnglishChineseTranslationView: View {
-  let text: String
-  let completion: (Result<String, Error>) -> Void
+  let texts: [String]
+  let completion: (Result<[String], Error>) -> Void
 
   var body: some View {
     VStack(spacing: 20) {
       Text("英译中").font(.headline)
-      Text(text).padding()
+      Text("准备本课中英对照（\(texts.count)句）").padding()
       ProgressView("正在准备中文翻译…")
       Text("首次使用可能需要同意系统准备英语和中文语言包。")
         .font(.footnote).foregroundStyle(.secondary).padding()
@@ -1448,8 +1454,18 @@ private struct SystemEnglishChineseTranslationView: View {
       target: Locale.Language(identifier: "zh-Hans")
     ) { session in
       do {
-        let response = try await session.translate(text)
-        await MainActor.run { completion(.success(response.targetText)) }
+        var translated = [String]()
+        // 分批限制单次请求大小；同一会话准备语言资源，避免每句弹出页面。
+        for start in stride(from: 0, to: texts.count, by: 100) {
+          try Task.checkCancellation()
+          let end = min(start + 100, texts.count)
+          let requests = texts[start..<end].enumerated().map { offset, text in
+            TranslationSession.Request(sourceText: text, clientIdentifier: String(start + offset))
+          }
+          let responses = try await session.translations(from: requests)
+          translated.append(contentsOf: responses.map { $0.targetText })
+        }
+        await MainActor.run { completion(.success(translated)) }
       } catch {
         await MainActor.run { completion(.failure(error)) }
       }
