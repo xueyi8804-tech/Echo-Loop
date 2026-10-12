@@ -24,6 +24,10 @@ for origin in ["https://www.echo-loop.cn", "https://www.echo-loop.top"]:
         subtitle = get_json(origin + "/api/v2/collections/" + collection_id + "/files/" + quote(file["id"], safe=""))
         media_url = subtitle["file"]["mediaUrl"]
         assert urlparse(media_url).scheme == "https"
+        parsed = urlparse(media_url)
+        if parsed.hostname == "cdn.echo-loop.top" and not parsed.username and parsed.port is None:
+            media_url = parsed._replace(netloc="cdn.echo-loop.cn").geturl()
+        result["media_origin"] = "https://" + urlparse(media_url).netloc
         # 只读取一个字节确认公开媒体响应，不落盘、不保存课程音频。
         result["stage"] = "media"
         with urlopen(Request(media_url, headers={"Range": "bytes=0-0"}), timeout=15) as response:

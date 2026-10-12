@@ -4,12 +4,24 @@ import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../config/regional_service_endpoints.dart';
 import '../../../providers/media_engine/media_engine_provider.dart';
 import '../../../providers/sentence_ai_provider.dart';
 import '../../../services/app_logger.dart';
 import '../../../services/apple_sentence_translation.dart';
 import '../data/community_collection_api.dart';
 import '../models/community_collection_models.dart';
+
+/// 个人中文版本使用已验证提供同路径资源的中国CDN，保留完整路径和查询。
+/// 仅替换作者的全球资源域名；第三方音频和已经是中国CDN的地址原样保留。
+String personalOnlineMediaUrl(String value) {
+  final source = Uri.tryParse(value);
+  if (source == null || source.scheme != 'https' ||
+      source.userInfo.isNotEmpty || source.hasPort ||
+      source.host != 'cdn.echo-loop.top') return value;
+  final china = Uri.parse(chinaModelCdnBaseUrl);
+  return source.replace(scheme: china.scheme, host: china.host).toString();
+}
 
 /// 可替换的整课翻译入口，页面测试不依赖原生系统或网络翻译服务。
 final onlineCourseTranslationProvider =
@@ -87,7 +99,8 @@ class _OnlineCoursePlayerScreenState extends ConsumerState<OnlineCoursePlayerScr
       }
       if (!mounted || generation != _generation) return;
       final duration = await _engine.loadRemoteMedia(
-        id: 'online:${file.id}', title: file.title, url: file.mediaUrl,
+        id: 'online:${file.id}', title: file.title,
+        url: personalOnlineMediaUrl(file.mediaUrl),
         speed: _speed,
       );
       if (!mounted || generation != _generation) return;

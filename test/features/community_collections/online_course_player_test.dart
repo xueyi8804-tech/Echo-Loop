@@ -57,6 +57,26 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   setUpAll(() => registerFallbackValue(CancelToken()));
 
+  test('个人中文课切换到国内资源地址并保留路径及查询', () {
+    expect(personalOnlineMediaUrl(
+      'https://cdn.echo-loop.top/courses/a.m4a?token=example&x=2'),
+      'https://cdn.echo-loop.cn/courses/a.m4a?token=example&x=2');
+    expect(personalOnlineMediaUrl('https://cdn.echo-loop.cn/courses/a.m4a'),
+      'https://cdn.echo-loop.cn/courses/a.m4a');
+  });
+
+  test('不改写第三方主机或包含账号、端口的特殊URL', () {
+    for (final url in [
+      'https://example.com/a.m4a',
+      'https://cdn.echo-loop.top.example.com/a.m4a',
+      'https://user@cdn.echo-loop.top/a.m4a',
+      'https://cdn.echo-loop.top:8443/a.m4a',
+      'http://cdn.echo-loop.top/a.m4a',
+    ]) {
+      expect(personalOnlineMediaUrl(url), url);
+    }
+  });
+
   test('网络媒体直接交给后端，不解析为本地音频文件', () async {
     final backend = FakeMediaPlayerBackend();
     final container = ProviderContainer(overrides: [
