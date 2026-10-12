@@ -6,6 +6,7 @@ library;
 
 import 'dart:async';
 import 'dart:convert';
+import '../data/personal_courses.dart';
 
 import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -302,6 +303,13 @@ class SentenceAiNotifier {
     CancelToken? cancelToken,
     bool respectLocalQuotaReset = false,
   }) async* {
+    // 预置中文是课程内容，不调用云端、不消耗额度。
+    final local = personalChineseTranslation(text, targetLanguage);
+    if (local != null) {
+      yield SentenceTranslation(translation: local);
+      return;
+    }
+
     final hash = translationContextHash(text, previous: previous, next: next);
     final cacheKey = '$hash:$targetLanguage';
     final l2Type = 'translation_v2:$targetLanguage';
@@ -776,6 +784,8 @@ class SentenceAiNotifier {
     String? next,
     String? targetLanguage,
   }) {
+    final local = personalChineseTranslation(text, targetLanguage);
+    if (local != null) return SentenceTranslation(translation: local);
     final hash = translationContextHash(text, previous: previous, next: next);
     if (targetLanguage != null) {
       return _translationCache['$hash:$targetLanguage'];

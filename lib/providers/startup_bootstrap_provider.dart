@@ -33,6 +33,8 @@ import '../services/app_logger.dart';
 import '../services/asr/asr_model_manager.dart';
 import '../services/background_audio_handler.dart';
 import '../services/bundled_example_installer.dart';
+import '../services/personal_course_installer.dart';
+import '../data/personal_courses.dart';
 import '../services/network_permission_trigger.dart';
 import '../services/speech_practice_platform.dart';
 import '../services/startup_trace.dart';
@@ -215,6 +217,13 @@ class DefaultStartupBootstrapper implements StartupBootstrapper {
         'bundled_examples_install',
         () => BundledExampleInstaller(_database, _prefs).installOnFirstLaunch(),
       );
+      if (personalCoursesEnabled) {
+        await _runBestEffort(
+          issues,
+          'personal_courses_install',
+          () => PersonalCourseInstaller(_database, _prefs).install(),
+        );
+      }
     }
 
     activeStartupTrace?.mark(
