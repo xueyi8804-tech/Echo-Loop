@@ -1,6 +1,9 @@
 /// 个人课程：内容随包提供，不需要账号；语音为构建时合成。
 library;
 
+/// 仅个人构建安装课程，原版和原有测试无需额外语音资源。
+const personalCoursesEnabled = bool.fromEnvironment('PERSONAL_COURSES');
+
 class PersonalCourse {
   const PersonalCourse(this.id, this.title, this.sentences);
   final String id;
