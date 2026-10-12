@@ -31,6 +31,14 @@ jobs:
       - name: Install locked dependencies
         run: flutter pub get --enforce-lockfile
 
+      - name: Generate personal course audio
+        run: python3 scripts/generate_personal_courses.py
+
+      - name: Check personal course changes
+        run: |
+          flutter analyze lib/data/personal_courses.dart lib/services/personal_course_installer.dart lib/providers/sentence_ai_provider.dart lib/providers/startup_bootstrap_provider.dart test/providers/personal_translation_test.dart test/services/personal_course_installer_test.dart
+          flutter test test/providers/personal_translation_test.dart test/services/personal_course_installer_test.dart test/providers/sentence_ai_provider_test.dart
+
       - name: Install locked iOS dependencies
         working-directory: ios
         run: |
@@ -38,7 +46,7 @@ jobs:
           pod _1.16.2_ install
 
       - name: Compile for iPhone
-        run: flutter build ios --release --no-codesign --flavor prod
+        run: flutter build ios --release --no-codesign --flavor prod --build-number=${{ github.run_number }}
 
       - name: Package unsigned IPA
         run: |
@@ -47,9 +55,17 @@ jobs:
           mkdir -p personal-build/staging/Payload
           ditto build/ios/iphoneos/Runner.app personal-build/staging/Payload/Runner.app
           ditto -c -k --keepParent personal-build/staging/Payload personal-build/EchoLoop-Personal-unsigned.ipa
+          python3 - <<'PY'
+          import zipfile
+          with zipfile.ZipFile('personal-build/EchoLoop-Personal-unsigned.ipa') as ipa:
+              names = ipa.namelist()
+              assert 'Payload/Runner.app/Info.plist' in names
+              assert all(not name.startswith('/') and '..' not in name.split('/') for name in names)
+          PY
           cp pubspec.lock personal-build/pubspec.lock
           cp ios/Podfile.lock personal-build/Podfile.lock
-          printf '%s\n' 'Unsigned IPA: sign for your device before installation.' > personal-build/README.txt
+          printf '%s\n' 'Unsigned IPA: sign with Sideloadly for your own device before installation. This archive is not directly installable.' > personal-build/README.txt
+          shasum -a 256 personal-build/*.ipa > personal-build/sha256.txt
 
       - name: Save installation package
         uses: actions/upload-artifact@v4
