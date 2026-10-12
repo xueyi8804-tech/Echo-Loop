@@ -5,6 +5,8 @@ import NaturalLanguage
 import PostHog
 import Speech
 import StoreKit
+import SwiftUI
+import Translation
 import UIKit
 import UserNotifications
 
@@ -26,10 +28,11 @@ private final class IOSSpeechPracticeHandler: NSObject, FlutterStreamHandler {
   private let eventChannel: FlutterEventChannel
   private var eventSink: FlutterEventSink?
 
-  // 引擎级资源（页面常驻，warmup 创建，shutdown 释放）
+  // 引擎级资源（用户开始录音时创建，shutdown 释放）
   private var audioEngine: AVAudioEngine?
   private var cachedRecognizer: SFSpeechRecognizer?
   private var isEngineRunning = false
+  private var isInputTapInstalled = false
   private var isRecording = false
 
   /// 是否启用平台语音识别（默认 false，纯录音 + VAD）。
@@ -162,78 +165,17 @@ private final class IOSSpeechPracticeHandler: NSObject, FlutterStreamHandler {
     }
   }
 
-  /// 预热引擎：创建 AVAudioEngine + installTap + start，页面进入时调用。
+  /// 页面预热：仅准备识别器；录音图在用户开始录音时创建。
   ///
   /// 如果权限尚未请求（notDetermined），会自动触发系统权限弹窗。
+  // 页面预热只准备识别器，不激活麦克风或安装录音 tap。
+  // 播放器会调整音频会话；提前启动录音图会在部分设备上触发原生异常。
   private func warmup(_ arguments: [String: Any]?, result: @escaping FlutterResult) {
-    let micStatus = microphonePermissionStatus()
-
-    // 纯录音模式只需要麦克风权限；识别模式还需要语音识别权限。
-    let needsSpeech = recognitionEnabled
-    let speechStatus = needsSpeech ? speechPermissionStatus() : "granted"
-
-    if micStatus == "notDetermined" || speechStatus == "notDetermined" {
-      requestPermissions(onlyMic: !needsSpeech) { [weak self] _ in
-        self?.warmup(arguments, result: result)
-      }
-      return
+    let locale = (arguments?["locale"] as? String) ?? "en-US"
+    if recognitionEnabled, speechPermissionStatus() == "granted" {
+      cachedRecognizer = SFSpeechRecognizer(locale: Locale(identifier: locale))
     }
-
-    guard micStatus == "granted", speechStatus == "granted" else {
-      result(FlutterError(
-        code: SpeechPracticeError.permissionDenied.rawValue,
-        message: "Microphone or speech permission denied",
-        details: nil
-      ))
-      return
-    }
-
-    // 已在运行则直接返回。
-    if isEngineRunning {
-      result([:])
-      return
-    }
-
-    let localeIdentifier = (arguments?["locale"] as? String) ?? "en-US"
-    if recognitionEnabled {
-      cachedRecognizer = SFSpeechRecognizer(locale: Locale(identifier: localeIdentifier))
-    }
-
-    do {
-      try configureRecordingSession()
-
-      let engine = AVAudioEngine()
-      let inputNode = engine.inputNode
-      let inputFormat = inputNode.outputFormat(forBus: 0)
-
-      inputNode.installTap(onBus: 0, bufferSize: 1024, format: inputFormat) { [weak self] buffer, _ in
-        guard let self, self.isRecording else { return }
-        self.handleVoiceActivity(buffer: buffer)
-        self.recognitionRequest?.append(buffer)
-        do {
-          let playbackBuffer = self.makeAmplifiedBuffer(from: buffer, gain: 2.2)
-          try self.audioFile?.write(from: playbackBuffer)
-        } catch {
-          self.emitError(
-            code: SpeechPracticeError.recordingFailed.rawValue,
-            message: "Failed to write recording buffer"
-          )
-        }
-      }
-
-      engine.prepare()
-      try engine.start()
-      audioEngine = engine
-      isEngineRunning = true
-      result([:])
-    } catch {
-      cleanupEngine()
-      result(FlutterError(
-        code: SpeechPracticeError.recordingFailed.rawValue,
-        message: "Failed to warmup audio engine",
-        details: error.localizedDescription
-      ))
-    }
+    result([:])
   }
 
   private func startSession(_ arguments: [String: Any]?, result: @escaping FlutterResult) {
@@ -323,7 +265,7 @@ private final class IOSSpeechPracticeHandler: NSObject, FlutterStreamHandler {
   /// 如果权限尚未请求（notDetermined），会自动触发系统权限弹窗。
   private func startSessionFull(promptId: String, locale: String, result: @escaping FlutterResult) {
     let micStatus = microphonePermissionStatus()
-    let speechStatus = speechPermissionStatus()
+    let speechStatus = recognitionEnabled ? speechPermissionStatus() : "granted"
 
     if micStatus == "notDetermined" || speechStatus == "notDetermined" {
       requestPermissions(onlyMic: !recognitionEnabled) { [weak self] _ in
@@ -357,6 +299,9 @@ private final class IOSSpeechPracticeHandler: NSObject, FlutterStreamHandler {
 
     cleanupSentenceState(cancelRecognition: true)
     cleanupEngine()
+    if recognitionEnabled {
+      cachedRecognizer = SFSpeechRecognizer(locale: Locale(identifier: locale))
+    }
 
     let fileName = sanitizedFileName(promptId)
     let fileURL = URL(fileURLWithPath: NSTemporaryDirectory())
@@ -367,7 +312,16 @@ private final class IOSSpeechPracticeHandler: NSObject, FlutterStreamHandler {
 
       let engine = AVAudioEngine()
       let inputNode = engine.inputNode
+      let hardwareFormat = inputNode.inputFormat(forBus: 0)
       let inputFormat = inputNode.outputFormat(forBus: 0)
+      guard AVAudioSession.sharedInstance().isInputAvailable,
+            hardwareFormat.sampleRate.isFinite, hardwareFormat.sampleRate > 0,
+            hardwareFormat.channelCount > 0,
+            inputFormat.sampleRate.isFinite, inputFormat.sampleRate > 0,
+            inputFormat.channelCount > 0 else {
+        throw NSError(domain: "EchoLoopRecording", code: 1,
+                      userInfo: [NSLocalizedDescriptionKey: "麦克风暂时不可用，请断开蓝牙耳机后重试。"])
+      }
 
       var request: SFSpeechAudioBufferRecognitionRequest?
 
@@ -391,7 +345,7 @@ private final class IOSSpeechPracticeHandler: NSObject, FlutterStreamHandler {
         }
       }
 
-      inputNode.installTap(onBus: 0, bufferSize: 1024, format: inputFormat) { [weak self] buffer, _ in
+      let tapError = EchoLoopInstallRecordingTap(inputNode, inputFormat) { [weak self] buffer, _ in
         guard let self, self.isRecording else { return }
         self.handleVoiceActivity(buffer: buffer)
         self.recognitionRequest?.append(buffer)
@@ -406,6 +360,11 @@ private final class IOSSpeechPracticeHandler: NSObject, FlutterStreamHandler {
         }
       }
 
+      if let tapError {
+        throw NSError(domain: "EchoLoopRecording", code: 2,
+                      userInfo: [NSLocalizedDescriptionKey: tapError])
+      }
+      isInputTapInstalled = true
       engine.prepare()
       try engine.start()
       isEngineRunning = true
@@ -792,10 +751,13 @@ private final class IOSSpeechPracticeHandler: NSObject, FlutterStreamHandler {
   /// 引擎级清理：removeTap + engine.stop + 释放全部引擎资源 + 恢复 playback session。
   private func cleanupEngine() {
     if let engine = audioEngine {
-      engine.inputNode.removeTap(onBus: 0)
       engine.stop()
+      if isInputTapInstalled {
+        engine.inputNode.removeTap(onBus: 0)
+      }
     }
     audioEngine = nil
+    isInputTapInstalled = false
     cachedRecognizer = nil
     isEngineRunning = false
     isRecording = false
@@ -1138,6 +1100,9 @@ private final class IOSAudioDecodeHandler: NSObject {
 
 @main
 @objc class AppDelegate: FlutterAppDelegate {
+  private var systemTranslationHost: UIViewController?
+  private var systemTranslationResult: FlutterResult?
+  private var systemTranslationChannel: FlutterMethodChannel?
   private var speechPracticeHandler: IOSSpeechPracticeHandler?
   private var textEmbeddingHandler: IOSTextEmbeddingHandler?
   private var audioDecodeHandler: IOSAudioDecodeHandler?
@@ -1163,6 +1128,7 @@ private final class IOSAudioDecodeHandler: NSObject {
     UNUserNotificationCenter.current().delegate = self
 
     let controller = window?.rootViewController as! FlutterViewController
+    configureSystemTranslation(controller: controller)
     let networkChannel = FlutterMethodChannel(
       name: "top.echo-loop/network",
       binaryMessenger: controller.binaryMessenger
@@ -1226,6 +1192,142 @@ private final class IOSAudioDecodeHandler: NSObject {
     notificationPermissionHandler = NotificationPermissionHandler(binaryMessenger: controller.binaryMessenger)
 
     return super.application(application, didFinishLaunchingWithOptions: launchOptions)
+  }
+
+
+  /// 用系统翻译界面准备语言资源；只处理个人用户主动请求的英译中。
+  private var systemTranslationIsBatch = false
+
+  private func configureSystemTranslation(controller: FlutterViewController) {
+    let channel = FlutterMethodChannel(
+      name: "top.echo-loop/system_translation",
+      binaryMessenger: controller.binaryMessenger
+    )
+    systemTranslationChannel = channel
+    channel.setMethodCallHandler { [weak self, weak controller] call, result in
+      guard call.method == "translate" || call.method == "translateBatch" else {
+        result(FlutterMethodNotImplemented)
+        return
+      }
+      guard let self, let controller else {
+        result(FlutterError(code: "unavailable", message: "翻译页面不可用", details: nil))
+        return
+      }
+      guard #available(iOS 18.0, *) else {
+        result(FlutterError(code: "unsupported", message: "系统翻译需要iOS 18或更新版本", details: nil))
+        return
+      }
+      guard self.systemTranslationResult == nil else {
+        result(FlutterError(code: "busy", message: "请等待当前翻译完成", details: nil))
+        return
+      }
+      let args = call.arguments as? [String: Any]
+      let isBatch = call.method == "translateBatch"
+      let texts = isBatch ? (args?["texts"] as? [String] ?? [])
+        : (args?["text"] as? String).map { [$0] } ?? []
+      guard !texts.isEmpty, texts.count <= 5000,
+            texts.allSatisfy({ !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && $0.count <= 5000 }) else {
+        result(FlutterError(code: "invalid_text", message: "句子为空或过长", details: nil))
+        return
+      }
+      // iOS 26 使用仅支持已安装语言的无 UI 会话，避免系统远程 sheet 崩溃。
+      if #available(iOS 26.0, *) {
+        self.systemTranslationResult = result
+        self.systemTranslationIsBatch = isBatch
+        Task { @MainActor [weak self] in
+          guard let self else { return }
+          do {
+            let translated = try await self.translateInstalledTexts(texts)
+            self.finishSystemTranslation(.success(translated))
+          } catch {
+            self.finishSystemTranslation(.failure(error))
+          }
+        }
+        return
+      }
+      var presenter: UIViewController = controller
+      while let presented = presenter.presentedViewController {
+        presenter = presented
+      }
+      self.systemTranslationResult = result
+      self.systemTranslationIsBatch = isBatch
+      let host = UIHostingController(rootView: SystemEnglishChineseTranslationView(
+        texts: texts,
+        completion: { [weak self] response in
+          self?.finishSystemTranslation(response)
+        }
+      ))
+      host.isModalInPresentation = true
+      host.modalPresentationStyle = .fullScreen
+      self.systemTranslationHost = host
+      presenter.present(host, animated: true)
+    }
+  }
+
+  @available(iOS 26.0, *)
+  @MainActor
+  private func translateInstalledTexts(_ texts: [String]) async throws -> [String] {
+    let source = Locale.Language(identifier: "en")
+    let target = Locale.Language(identifier: "zh-Hans")
+    let status = await LanguageAvailability().status(from: source, to: target)
+    guard status == .installed else {
+      throw NSError(domain: "EchoLoopTranslation", code: 1,
+        userInfo: [NSLocalizedDescriptionKey:
+          "请先在苹果“翻译”App下载英语和中文语言包，再返回课程点击“重试中英对照”。"])
+    }
+    // 此初始化器不请求下载，不创建 SwiftUI 翻译窗口。
+    let session = TranslationSession(installedSource: source, target: target)
+    var translated = [String]()
+    for start in stride(from: 0, to: texts.count, by: 100) {
+      try Task.checkCancellation()
+      let end = min(start + 100, texts.count)
+      let requests = texts[start..<end].enumerated().map { offset, text in
+        TranslationSession.Request(sourceText: text, clientIdentifier: String(start + offset))
+      }
+      let responses = try await session.translations(from: requests)
+      var byIndex = [String: String]()
+      for response in responses {
+        if let identifier = response.clientIdentifier {
+          byIndex[identifier] = response.targetText
+        }
+      }
+      for index in start..<end {
+        guard let text = byIndex[String(index)], !text.isEmpty else {
+          throw NSError(domain: "EchoLoopTranslation", code: 2,
+            userInfo: [NSLocalizedDescriptionKey: "系统返回的课程译文不完整，请重试。"])
+        }
+        translated.append(text)
+      }
+    }
+    return translated
+  }
+
+  /// 取消、完成和系统错误都只回调一次，并清理当前界面。
+  private func finishSystemTranslation(_ response: Result<[String], Error>) {
+    guard let result = systemTranslationResult else { return }
+    systemTranslationResult = nil
+    let host = systemTranslationHost
+    systemTranslationHost = nil
+    let isBatch = systemTranslationIsBatch
+    let finish = {
+      switch response {
+      case .success(let translated):
+        result(isBatch ? translated : translated.first as Any)
+      case .failure(let error):
+        result(FlutterError(
+          code: (error as NSError).domain == "EchoLoopTranslation" && (error as NSError).code == 1
+            ? "language_not_installed" : "translation_failed",
+          message: (error as NSError).domain == "EchoLoopTranslation"
+            ? error.localizedDescription : "系统翻译未完成，请准备语言资源后重试。",
+          details: error.localizedDescription
+        ))
+      }
+    }
+    if let host {
+      host.dismiss(animated: true, completion: finish)
+    } else {
+      finish()
+    }
   }
 
   private func deviceInfo() -> [String: Any] {
@@ -1340,5 +1442,48 @@ private final class IOSAudioDecodeHandler: NSObject {
     config.sessionReplayConfig.captureNetworkTelemetry = false
 
     PostHogSDK.shared.setup(config)
+  }
+}
+
+
+/// translationTask提供允许征求语言下载许可的系统会话，设备不支持时由桥接层明确报错。
+@available(iOS 18.0, *)
+private struct SystemEnglishChineseTranslationView: View {
+  let texts: [String]
+  let completion: (Result<[String], Error>) -> Void
+
+  var body: some View {
+    VStack(spacing: 20) {
+      Text("英译中").font(.headline)
+      Text("准备本课中英对照（\(texts.count)句）").padding()
+      ProgressView("正在准备中文翻译…")
+      Text("首次使用可能需要同意系统准备英语和中文语言包。")
+        .font(.footnote).foregroundStyle(.secondary).padding()
+      Button("取消") {
+        completion(.failure(CancellationError()))
+      }
+    }
+    .padding()
+    .translationTask(
+      source: Locale.Language(identifier: "en"),
+      target: Locale.Language(identifier: "zh-Hans")
+    ) { session in
+      do {
+        var translated = [String]()
+        // 分批限制单次请求大小；同一会话准备语言资源，避免每句弹出页面。
+        for start in stride(from: 0, to: texts.count, by: 100) {
+          try Task.checkCancellation()
+          let end = min(start + 100, texts.count)
+          let requests = texts[start..<end].enumerated().map { offset, text in
+            TranslationSession.Request(sourceText: text, clientIdentifier: String(start + offset))
+          }
+          let responses = try await session.translations(from: requests)
+          translated.append(contentsOf: responses.map { $0.targetText })
+        }
+        await MainActor.run { completion(.success(translated)) }
+      } catch {
+        await MainActor.run { completion(.failure(error)) }
+      }
+    }
   }
 }

@@ -3,8 +3,20 @@ name: Personal iPhone build
 on:
   workflow_dispatch:
   push:
-    branches: [personal-courses]
+    branches: [online-public-courses]
     paths:
+      - 'lib/features/community_collections/screens/**'
+      - 'lib/features/community_collections/widgets/community_collection_card.dart'
+      - 'lib/providers/media_engine/media_engine_provider.dart'
+      - 'lib/widgets/practice/practice_normal_mode_view.dart'
+      - 'test/widgets/practice/personal_bilingual_subtitle_test.dart'
+      - 'lib/services/apple_sentence_translation.dart'
+      - 'ios/Runner/AppDelegate.swift'
+      - 'ios/Runner/Runner-Bridging-Header.h'
+      - 'scripts/recording_tap_exception_test.m'
+      - 'test/features/community_collections/online_course_player_test.dart'
+      - 'test/providers/apple_sentence_translation_test.dart'
+      - 'scripts/probe_public_courses.py'
       - 'lib/data/personal_courses.dart'
       - 'lib/services/personal_course_installer.dart'
       - 'lib/providers/sentence_ai_provider.dart'
@@ -26,9 +38,26 @@ jobs:
   build:
     runs-on: macos-15
     timeout-minutes: 45
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_26.3.app/Contents/Developer
     steps:
       - name: Download source
         uses: actions/checkout@v4
+
+      - name: Check installed-language translation SDK
+        run: |
+          xcodebuild -version
+          python3 - <<'PY'
+          import os
+          from pathlib import Path
+          source = Path("ios/Runner/AppDelegate.swift").read_text()
+          start = source.index("  @available(iOS 26.0, *)\n  @MainActor\n  private func translateInstalledTexts")
+          end = source.index("  /// 取消、完成和系统错误", start)
+          function = source[start:end].replace("private func", "func", 1)
+          Path(os.environ["RUNNER_TEMP"], "translation-api.swift").write_text(
+              "import Foundation\nimport Translation\n" + function)
+          PY
+          xcrun --sdk iphoneos swiftc -typecheck -target arm64-apple-ios26.0 -sdk "$(xcrun --sdk iphoneos --show-sdk-path)" "$RUNNER_TEMP/translation-api.swift"
 
       - name: Install Flutter
         uses: subosito/flutter-action@v2
@@ -50,10 +79,30 @@ jobs:
       - name: Generate personal course audio
         run: python3 scripts/generate_personal_courses.py
 
+      - name: Probe public online courses
+        run: python3 scripts/probe_public_courses.py
+
       - name: Check personal course changes
         run: |
           flutter analyze lib/data/personal_courses.dart lib/services/personal_course_installer.dart lib/providers/sentence_ai_provider.dart lib/providers/startup_bootstrap_provider.dart test/providers/personal_translation_test.dart test/services/personal_course_installer_test.dart
           flutter test test/providers/personal_translation_test.dart test/services/personal_course_installer_test.dart test/providers/sentence_ai_provider_test.dart test/providers/startup_bootstrap_provider_test.dart
+
+      - name: Check online playback and system translation
+        run: |
+          dart format lib/features/community_collections/screens/online_course_player_screen.dart lib/services/apple_sentence_translation.dart test/features/community_collections/online_course_player_test.dart test/providers/apple_sentence_translation_test.dart
+          flutter analyze lib/widgets/practice/practice_normal_mode_view.dart test/widgets/practice/personal_bilingual_subtitle_test.dart lib/features/community_collections/screens/discover_collections_screen.dart lib/features/community_collections/widgets/community_collection_card.dart lib/features/community_collections/screens/community_collection_detail_screen.dart lib/features/community_collections/screens/online_course_player_screen.dart lib/providers/media_engine/media_engine_provider.dart lib/providers/sentence_ai_provider.dart lib/services/apple_sentence_translation.dart test/features/community_collections/online_course_player_test.dart test/providers/apple_sentence_translation_test.dart
+          flutter test test/features/community_collections/online_course_player_test.dart test/providers/apple_sentence_translation_test.dart test/features/community_collections/community_collection_detail_screen_test.dart
+
+          flutter test test/widgets/practice/practice_normal_mode_view_test.dart
+          flutter test --dart-define=PERSONAL_COURSES=true test/widgets/practice/personal_bilingual_subtitle_test.dart
+
+      - name: Check Swift syntax
+        run: xcrun swiftc -frontend -parse ios/Runner/AppDelegate.swift
+
+      - name: Test native recording exception boundary
+        run: |
+          xcrun clang -mmacosx-version-min=15.0 -fobjc-arc -fblocks -framework Foundation -framework AVFoundation -I ios/Runner scripts/recording_tap_exception_test.m -o "$RUNNER_TEMP/recording-tap-test"
+          "$RUNNER_TEMP/recording-tap-test"
 
       - name: Install locked iOS dependencies
         working-directory: ios
@@ -91,6 +140,7 @@ jobs:
             personal-build/*.ipa
             personal-build/*.txt
             personal-build/*.lock
+            personal-build/*.json
           if-no-files-found: error
           retention-days: 7
 
@@ -99,6 +149,8 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: Personal-iPhone-build-diagnostics
-          path: personal-build/*.txt
+          path: |
+            personal-build/*.txt
+            personal-build/*.json
           if-no-files-found: warn
           retention-days: 7

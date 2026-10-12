@@ -1,4 +1,5 @@
 import 'dart:async';
+import '../../../data/personal_courses.dart';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -146,6 +147,7 @@ class _DiscoverCommunityCollectionsScreenState
           final item = items[index - (hasPodcastEntry ? 1 : 0)];
           return CommunityCollectionCard(
             item: item,
+            onlineOnly: personalCoursesEnabled,
             enrolled: enrolledRemoteIds.contains(item.id),
             enrolling: _enrolling.contains(item.id),
             onOpenDetail: () => context.push(

@@ -202,10 +202,36 @@ class MediaEngine extends _$MediaEngine {
     () => _loadMedia(item, speed, initialPosition: initialPosition),
   );
 
+  /// 公开课程通过网络地址直接播放，不创建本地音频文件或数据库条目。
+  Future<Duration?> loadRemoteMedia({
+    required String id,
+    required String title,
+    required String url,
+    double speed = 1.0,
+  }) {
+    final uri = Uri.tryParse(url);
+    if (uri == null || uri.scheme != 'https' || uri.host.isEmpty ||
+        uri.userInfo.isNotEmpty) {
+      return Future.error(const FormatException('课程音频地址无效'));
+    }
+    return _enqueueLifecycle(
+      'remote-$id',
+      () async {
+        _invalidateRangeRequest('load-remote');
+        newSession();
+        return _loadMedia(
+          AudioItem(id: id, name: title, addedDate: DateTime.now()),
+          speed, initialPosition: Duration.zero, remoteUrl: url,
+        );
+      },
+    );
+  }
+
   Future<Duration?> _loadMedia(
     AudioItem item,
     double speed, {
     required Duration initialPosition,
+    String? remoteUrl,
   }) async {
     AppLogger.log(
       'MediaEngine',
@@ -223,7 +249,7 @@ class MediaEngine extends _$MediaEngine {
       clearErrorMessage: true,
       clearTotalDuration: true,
     );
-    final path = await item.getFullAudioPath();
+    final path = remoteUrl ?? await item.getFullAudioPath();
     if (path == null) {
       AppLogger.log('MediaEngine', 'loadMedia: file unavailable id=${item.id}');
       state = state.copyWith(
