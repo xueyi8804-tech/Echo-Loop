@@ -1,4 +1,6 @@
 import 'dart:async';
+import '../../../data/personal_courses.dart';
+import 'online_course_player_screen.dart';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -92,6 +94,7 @@ class _CommunityCollectionDetailScreenState
                   .loadMore(),
             ),
             onEnroll: () => _enroll(context, ref),
+            onPlay: personalCoursesEnabled ? _playOnline : null,
             onLearn: () {
               if (localId != null) {
                 context.go(AppRoutes.collectionDetail(localId));
@@ -118,6 +121,15 @@ class _CommunityCollectionDetailScreenState
       }
     }
     return null;
+  }
+
+  /// 公开课程不需要先加入账号合集，逐课在线播放。
+  void _playOnline(CommunityCollectionFile file) {
+    Navigator.of(context).push(MaterialPageRoute<void>(
+      builder: (_) => OnlineCoursePlayerScreen(
+        collectionId: widget.remoteId, file: file,
+      ),
+    ));
   }
 
   Future<void> _enroll(BuildContext context, WidgetRef ref) async {
@@ -156,6 +168,7 @@ class _Content extends StatelessWidget {
   final VoidCallback onLoadMore;
   final VoidCallback onEnroll;
   final VoidCallback onLearn;
+  final ValueChanged<CommunityCollectionFile>? onPlay;
 
   const _Content({
     required this.catalogEntry,
@@ -165,6 +178,7 @@ class _Content extends StatelessWidget {
     required this.onLoadMore,
     required this.onEnroll,
     required this.onLearn,
+    this.onPlay,
   });
 
   @override
@@ -187,6 +201,7 @@ class _Content extends StatelessWidget {
       isLoadingMore: remotePage?.isLoadingMore ?? false,
       loadMoreError: remotePage?.loadMoreError,
       onLoadMore: onLoadMore,
+      onPlay: onPlay,
     );
     return Column(
       children: [
@@ -198,9 +213,13 @@ class _Content extends StatelessWidget {
             child: SizedBox(
               width: double.infinity,
               child: FilledButton(
-                onPressed: localId == null ? onEnroll : onLearn,
+                onPressed: onPlay != null
+                    ? (remotePage?.items.isNotEmpty ?? false)
+                        ? () => onPlay?.call(remotePage?.items.first ?? const CommunityCollectionFile(id: '', title: '', description: null, mediaType: CommunityMediaType.audio, durationSec: null, fileSizeBytes: null, difficulty: null, publishedAt: null, sortOrder: 0, mediaUrl: ''))
+                        : null
+                    : localId == null ? onEnroll : onLearn,
                 child: Text(
-                  localId == null ? l10n.addToMyCollections : l10n.goLearn,
+                  onPlay != null ? '在线播放第一课' : localId == null ? l10n.addToMyCollections : l10n.goLearn,
                 ),
               ),
             ),
@@ -218,6 +237,7 @@ class _PreviewList extends StatelessWidget {
   final bool isLoadingMore;
   final Object? loadMoreError;
   final VoidCallback onLoadMore;
+  final ValueChanged<CommunityCollectionFile>? onPlay;
 
   const _PreviewList({
     required this.header,
@@ -226,6 +246,7 @@ class _PreviewList extends StatelessWidget {
     required this.isLoadingMore,
     required this.loadMoreError,
     required this.onLoadMore,
+    this.onPlay,
   });
 
   @override
@@ -278,6 +299,7 @@ class _PreviewList extends StatelessWidget {
           final file = files[fileIndex];
           final durationSec = file.durationSec;
           return ListTile(
+            onTap: onPlay == null ? null : () => onPlay?.call(file),
             contentPadding: const EdgeInsetsDirectional.symmetric(
               horizontal: 16,
             ),
