@@ -4,6 +4,8 @@
 
 ## 本次完成
 
+- [x] 个人英语版课程与离线中文（2026-10-12）：新增9篇入门/电商短句课程及合成语音，原6篇与新增课程共85句预置中文，不登录即可读取。个人构建升级添加独立合集并保留已有材料，语音和字幕从同一份课程生成。新增免登录与额度边界、升级安装与失败重试测试；相关文件定向分析通过，47项定向/回归测试通过，iPhone release无签名编译及IPA结构检查通过。验证构建：38189039821，源代码4cc621b43ec7d0f74a855d8412296c6a316d8dc6。未运行scripts/check.sh：改动为个人课程、翻译与构建流程，使用定向检查；原CI的lib/test分析另已通过，全量测试仍运行。未运行Maestro和真机测试：当前无可用iPhone/模拟器；签名、播放、录音及离线中文待用户用Sideloadly更新后验收。安装完整性报错不能凭截图确认根因，保留未签名包边界、结构检查和校验值，不宣称苹果签名已验证。**完成时间**：2026-10-12
+
 - [x] 简化网页词典子资源访问日志（2026-10-11）：资源加载时仅打印 URL，移除来源、资源类型及耗时字段，便于查看 WebView 实际访问地址且避免冗长日志。定向 `flutter analyze lib/widgets/dictionary/web_dictionary_view.dart` 与 `git diff --check` 通过；未运行测试：仅调整日志内容；未运行 `scripts/check.sh`：改动局限于网页词典诊断日志。**完成时间**: 2026-10-11 13:54
 - [x] 恢复网页词典广告屏蔽开关（2026-10-11）：结果视图订阅已持久化的 `adFilteringEnabled`，切换时重建 WebView；关闭时不传网络规则且不注入广告隐藏 CSS，开启时 Android/iOS/macOS 使用网络规则、Windows 使用 CSS 隐藏。页面清理、Cookie 同意与滚动条样式保持独立。定向广告过滤 Widget 测试 4 项通过，相关 3 个 Dart 文件 `flutter analyze` 通过，`dart format` 与 `git diff --check` 通过。未运行 `scripts/check.sh`：改动限于词典 WebView；未运行 Maestro：没有网页词典专用 Flow，现有首次启动 Flow 会清理应用状态。仍需在 macOS 实测开关开/关及页面加载。**完成时间**: 2026-10-11 13:42
 - [x] 修复 macOS 网页词典广告规则编译失败（2026-10-11）：移除 WebKit 不支持的广告脚本 URL 正则分支，保留脚本路径匹配；增加规则集回归测试，确保交给原生拦截器的 URL 过滤器不含正则分支。定向 Widget 测试 2 项通过，相关 3 个 Dart 文件 `flutter analyze` 通过，`dart format` 与 `git diff --check` 通过。未运行 `scripts/check.sh`：改动只涉及网页词典广告规则。仍需在 macOS 重启 App 确认 WKContentRuleList 成功编译并正常显示词典页面。**完成时间**: 2026-10-11 12:17
