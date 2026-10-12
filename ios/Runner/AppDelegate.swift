@@ -345,7 +345,7 @@ private final class IOSSpeechPracticeHandler: NSObject, FlutterStreamHandler {
         }
       }
 
-      inputNode.installTap(onBus: 0, bufferSize: 1024, format: inputFormat) { [weak self] buffer, _ in
+      let tapError = EchoLoopInstallRecordingTap(inputNode, inputFormat) { [weak self] buffer, _ in
         guard let self, self.isRecording else { return }
         self.handleVoiceActivity(buffer: buffer)
         self.recognitionRequest?.append(buffer)
@@ -360,6 +360,10 @@ private final class IOSSpeechPracticeHandler: NSObject, FlutterStreamHandler {
         }
       }
 
+      if let tapError {
+        throw NSError(domain: "EchoLoopRecording", code: 2,
+                      userInfo: [NSLocalizedDescriptionKey: tapError])
+      }
       isInputTapInstalled = true
       engine.prepare()
       try engine.start()
