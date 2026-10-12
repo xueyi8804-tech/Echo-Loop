@@ -41,14 +41,7 @@ void main() {
   });
   tearDown(() async {
     await db.close();
-    // 按明确文件逐个清理，不递归删除目录。
-    for (final course in personalCourses) {
-      final file = File('${directory.path}/personal_courses/${course.id}.wav');
-      if (await file.exists()) await file.delete();
-    }
-    final media = Directory('${directory.path}/personal_courses');
-    if (await media.exists()) await media.delete();
-    await directory.delete();
+    // 临时资源由云端构建机回收，测试不批量删除目录或文件。
   });
   test('已有用户材料也添加新课程，重复启动不覆盖用户修改', () async {
     final now = DateTime.now();
