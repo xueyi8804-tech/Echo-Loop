@@ -216,10 +216,14 @@ class MediaEngine extends _$MediaEngine {
     }
     return _enqueueLifecycle(
       'remote-$id',
-      () => _loadMedia(
-        AudioItem(id: id, name: title, addedDate: DateTime.now()),
-        speed, initialPosition: Duration.zero, remoteUrl: url,
-      ),
+      () async {
+        _invalidateRangeRequest('load-remote');
+        newSession();
+        return _loadMedia(
+          AudioItem(id: id, name: title, addedDate: DateTime.now()),
+          speed, initialPosition: Duration.zero, remoteUrl: url,
+        );
+      },
     );
   }
 
