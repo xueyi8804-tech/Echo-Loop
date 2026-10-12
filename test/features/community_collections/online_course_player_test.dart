@@ -7,6 +7,7 @@ import 'package:echo_loop/providers/media_engine/media_engine_provider.dart';
 import 'package:echo_loop/services/media_session_router.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter/widgets.dart';
+import 'package:echo_loop/features/community_collections/widgets/community_collection_card.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
 
@@ -61,6 +62,26 @@ void main() {
     } finally {
       container.dispose();
     }
+  });
+
+  testWidgets('个人在线入口打开课程，不调用加入账号合集', (tester) async {
+    var opened = 0;
+    var enrolled = 0;
+    await tester.pumpWidget(createTestApp(
+      CommunityCollectionCard(
+        item: PublicCollectionCatalogEntry(
+          id: 'c', name: 'A1', description: null, coverUrl: null,
+          fileCount: 52, publishedAt: DateTime(2026, 10, 12),
+        ),
+        onlineOnly: true, enrolled: false, enrolling: false,
+        onOpenDetail: () => opened++,
+        onEnroll: () => enrolled++,
+      ),
+    ));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('在线播放'));
+    expect(opened, 1);
+    expect(enrolled, 0);
   });
 
   testWidgets('未登录可读取公开字幕、播放URL并点句跳转', (tester) async {
