@@ -143,7 +143,9 @@ class _OnlineCoursePlayerScreenState extends ConsumerState<OnlineCoursePlayerScr
         );
       }
     } finally {
-      if (mounted && generation == _generation) setState(() => _translating = null);
+      if (mounted && generation == _generation) {
+        setState(() => _translating = null);
+      }
     }
   }
 
@@ -195,7 +197,7 @@ class _OnlineCoursePlayerScreenState extends ConsumerState<OnlineCoursePlayerScr
                     DropdownButton<double>(
                       value: _speed,
                       items: [0.75, 1.0, 1.25].map((rate) =>
-                        DropdownMenuItem(value: rate, child: Text('${rate}倍速'))).toList(),
+                        DropdownMenuItem(value: rate, child: Text('$rate倍速'))).toList(),
                       onChanged: (rate) {
                         if (rate == null) return;
                         setState(() => _speed = rate);
@@ -218,10 +220,21 @@ class _OnlineCoursePlayerScreenState extends ConsumerState<OnlineCoursePlayerScr
                           await _engine.seek(sentence.startTime);
                           await _engine.play();
                         })),
-                        trailing: TextButton(
-                          onPressed: _translating == null ? () => _translate(index) : null,
-                          child: Text(_translating == index ? '翻译中' : '中文'),
-                        ),
+                        trailing: Row(mainAxisSize: MainAxisSize.min, children: [
+                          IconButton(
+                            tooltip: '重听本句',
+                            icon: const Icon(Icons.replay),
+                            onPressed: () => unawaited(_command(() async {
+                              await _engine.playRange(
+                                sentence.startTime, sentence.endTime, speed: _speed,
+                              );
+                            })),
+                          ),
+                          TextButton(
+                            onPressed: _translating == null ? () => _translate(index) : null,
+                            child: Text(_translating == index ? '翻译中' : '中文'),
+                          ),
+                        ]),
                       );
                     },
                   )),
