@@ -58,6 +58,9 @@ jobs:
       - name: Generate personal course audio
         run: python3 scripts/generate_personal_courses.py
 
+      - name: Probe public online courses
+        run: python3 scripts/probe_public_courses.py
+
       - name: Check personal course changes
         run: |
           flutter analyze lib/data/personal_courses.dart lib/services/personal_course_installer.dart lib/providers/sentence_ai_provider.dart lib/providers/startup_bootstrap_provider.dart test/providers/personal_translation_test.dart test/services/personal_course_installer_test.dart
@@ -69,8 +72,8 @@ jobs:
           flutter analyze lib/features/community_collections/screens/discover_collections_screen.dart lib/features/community_collections/widgets/community_collection_card.dart lib/features/community_collections/screens/community_collection_detail_screen.dart lib/features/community_collections/screens/online_course_player_screen.dart lib/providers/media_engine/media_engine_provider.dart lib/providers/sentence_ai_provider.dart lib/services/apple_sentence_translation.dart test/features/community_collections/online_course_player_test.dart test/providers/apple_sentence_translation_test.dart
           flutter test test/features/community_collections/online_course_player_test.dart test/providers/apple_sentence_translation_test.dart test/features/community_collections/community_collection_detail_screen_test.dart
 
-      - name: Probe public online courses
-        run: python3 scripts/probe_public_courses.py
+      - name: Check Swift syntax
+        run: xcrun swiftc -frontend -parse ios/Runner/AppDelegate.swift
 
       - name: Install locked iOS dependencies
         working-directory: ios
