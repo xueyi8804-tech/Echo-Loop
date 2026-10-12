@@ -1230,6 +1230,21 @@ private final class IOSAudioDecodeHandler: NSObject {
         result(FlutterError(code: "invalid_text", message: "句子为空或过长", details: nil))
         return
       }
+      // iOS 26 使用仅支持已安装语言的无 UI 会话，避免系统远程 sheet 崩溃。
+      if #available(iOS 26.0, *) {
+        self.systemTranslationResult = result
+        self.systemTranslationIsBatch = isBatch
+        Task { @MainActor [weak self] in
+          guard let self else { return }
+          do {
+            let translated = try await self.translateInstalledTexts(texts)
+            self.finishSystemTranslation(.success(translated))
+          } catch {
+            self.finishSystemTranslation(.failure(error))
+          }
+        }
+        return
+      }
       var presenter: UIViewController = controller
       while let presented = presenter.presentedViewController {
         presenter = presented
@@ -1243,10 +1258,48 @@ private final class IOSAudioDecodeHandler: NSObject {
         }
       ))
       host.isModalInPresentation = true
-      host.modalPresentationStyle = .pageSheet
+      host.modalPresentationStyle = .fullScreen
       self.systemTranslationHost = host
       presenter.present(host, animated: true)
     }
+  }
+
+  @available(iOS 26.0, *)
+  @MainActor
+  private func translateInstalledTexts(_ texts: [String]) async throws -> [String] {
+    let source = Locale.Language(identifier: "en")
+    let target = Locale.Language(identifier: "zh-Hans")
+    let status = await LanguageAvailability().status(from: source, to: target)
+    guard status == .installed else {
+      throw NSError(domain: "EchoLoopTranslation", code: 1,
+        userInfo: [NSLocalizedDescriptionKey:
+          "请先在苹果“翻译”App下载英语和中文语言包，再返回课程点击“重试中英对照”。"])
+    }
+    // 此初始化器不请求下载，不创建 SwiftUI 翻译窗口。
+    let session = TranslationSession(installedSource: source, target: target)
+    var translated = [String]()
+    for start in stride(from: 0, to: texts.count, by: 100) {
+      try Task.checkCancellation()
+      let end = min(start + 100, texts.count)
+      let requests = texts[start..<end].enumerated().map { offset, text in
+        TranslationSession.Request(sourceText: text, clientIdentifier: String(start + offset))
+      }
+      let responses = try await session.translations(from: requests)
+      var byIndex = [String: String]()
+      for response in responses {
+        if let identifier = response.clientIdentifier {
+          byIndex[identifier] = response.targetText
+        }
+      }
+      for index in start..<end {
+        guard let text = byIndex[String(index)], !text.isEmpty else {
+          throw NSError(domain: "EchoLoopTranslation", code: 2,
+            userInfo: [NSLocalizedDescriptionKey: "系统返回的课程译文不完整，请重试。"])
+        }
+        translated.append(text)
+      }
+    }
+    return translated
   }
 
   /// 取消、完成和系统错误都只回调一次，并清理当前界面。
@@ -1262,8 +1315,10 @@ private final class IOSAudioDecodeHandler: NSObject {
         result(isBatch ? translated : translated.first as Any)
       case .failure(let error):
         result(FlutterError(
-          code: "translation_failed",
-          message: "系统翻译未完成，请准备语言资源后重试。",
+          code: (error as NSError).domain == "EchoLoopTranslation" && (error as NSError).code == 1
+            ? "language_not_installed" : "translation_failed",
+          message: (error as NSError).domain == "EchoLoopTranslation"
+            ? error.localizedDescription : "系统翻译未完成，请准备语言资源后重试。",
           details: error.localizedDescription
         ))
       }

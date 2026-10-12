@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../config/regional_service_endpoints.dart';
@@ -181,7 +182,10 @@ class _OnlineCoursePlayerScreenState extends ConsumerState<OnlineCoursePlayerScr
       }
     } catch (error) {
       if (mounted && generation == _generation) {
-        setState(() => _notice = '中文尚未准备好，可重试中英对照；英文音频仍可播放。');
+        setState(() => _notice = error is PlatformException &&
+            error.code == 'language_not_installed'
+            ? '请先在苹果“翻译”App下载英语和中文语言包，再点击“重试中英对照”。英文音频仍可播放。'
+            : '中文尚未准备好，可重试中英对照；英文音频仍可播放。');
       }
     } finally {
       if (mounted && generation == _generation) {

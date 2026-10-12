@@ -1,3 +1,4 @@
+import 'package:flutter/services.dart';
 import 'dart:async';
 import 'package:audio_service/audio_service.dart';
 import 'package:echo_loop/models/media_engine_state.dart';
@@ -171,4 +172,44 @@ void main() {
     await tester.pumpAndSettle();
     await backend.dispose();
   });
+  testWidgets('缺少语言包时显示准备步骤，英文课程继续播放且可重试', (tester) async {
+    final api = _Api();
+    final backend = FakeMediaPlayerBackend();
+    when(() => api.getFileDetail('c', _file.id,
+      cancelToken: any(named: 'cancelToken'))).thenAnswer((_) async =>
+      const CommunityCollectionFileDetail(
+        file: _file,
+        subtitle: CommunitySubtitle(sentences: [
+          CommunitySubtitleSentence(text: 'A public sentence.',
+            startTime: Duration(seconds: 2), endTime: Duration(seconds: 5)),
+        ], words: []),
+      ));
+    var attempts = 0;
+    await tester.pumpWidget(createTestApp(
+      const OnlineCoursePlayerScreen(collectionId: 'c', file: _file),
+      overrides: [
+        communityCollectionApiProvider.overrideWithValue(api),
+        onlineCourseTranslationProvider.overrideWithValue((texts) async {
+          if (++attempts == 1) {
+            throw PlatformException(code: 'language_not_installed');
+          }
+          return ['这是一句公开课程的字幕。'];
+        }),
+        mediaEngineProvider.overrideWith(() => _PageEngine(backend)),
+      ],
+    ));
+    await tester.pumpAndSettle();
+    expect(backend.playCalls, 1);
+    expect(find.text('A public sentence.'), findsOneWidget);
+    expect(find.textContaining('下载英语和中文语言包'), findsOneWidget);
+    await tester.tap(find.text('重试中英对照'));
+    await tester.pumpAndSettle();
+    expect(attempts, 2);
+    expect(find.text('这是一句公开课程的字幕。'), findsOneWidget);
+    expect(find.textContaining('下载英语和中文语言包'), findsNothing);
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pumpAndSettle();
+    await backend.dispose();
+  });
+
 }
