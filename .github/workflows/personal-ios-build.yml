@@ -2,6 +2,17 @@ name: Personal iPhone build
 
 on:
   workflow_dispatch:
+  push:
+    branches: [personal-courses]
+    paths:
+      - 'lib/data/personal_courses.dart'
+      - 'lib/services/personal_course_installer.dart'
+      - 'lib/providers/sentence_ai_provider.dart'
+      - 'lib/providers/startup_bootstrap_provider.dart'
+      - 'scripts/generate_personal_courses.py'
+      - 'test/providers/personal_translation_test.dart'
+      - 'test/services/personal_course_installer_test.dart'
+      - '.github/workflows/personal-ios-build.yml'
 
 permissions:
   contents: read
