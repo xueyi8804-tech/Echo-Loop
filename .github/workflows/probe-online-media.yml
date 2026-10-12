@@ -19,6 +19,9 @@ jobs:
           from urllib.parse import urlparse, quote
           from urllib.error import HTTPError
           import xml.etree.ElementTree as ET
+          from concurrent.futures import ThreadPoolExecutor
+          from urllib.parse import urlencode
+          from collections import Counter
 
           headers = {"x-app-platform": "ios", "x-app-version": "1.0.40"}
           def get_json(url):
@@ -72,4 +75,45 @@ jobs:
                   result.update(error_type=type(error).__name__, status=getattr(error, "code", None))
               results.append(result)
           print(json.dumps(results, ensure_ascii=False))
+
+          # 分页核对A1/A2所有已发布媒体，只发送HEAD，不保存课程文件。
+          origin = "https://www.echo-loop.cn"
+          catalog = get_json(origin + "/api/v2/collections")
+          course_results = []
+          for entry in catalog["items"]:
+              if not entry["name"].startswith(("A1-", "A2-")):
+                  continue
+              prefix = origin + "/api/v2/collections/" + quote(entry["id"], safe="")
+              files, cursor, seen = [], None, set()
+              for page_index in range(20):
+                  page = get_json(prefix + ("?" + urlencode({"cursor": cursor}) if cursor else ""))
+                  files.extend(page["items"])
+                  cursor = page.get("nextCursor")
+                  if not cursor:
+                      break
+                  if cursor in seen:
+                      raise ValueError("repeated_cursor")
+                  seen.add(cursor)
+              def check(file):
+                  parsed = urlparse(file["mediaUrl"])
+                  if parsed.scheme != "https" or not parsed.hostname or parsed.username:
+                      return {"title": file["title"], "status": "invalid_url"}
+                  if parsed.hostname == "cdn.echo-loop.top":
+                      parsed = parsed._replace(netloc="cdn.echo-loop.cn")
+                  try:
+                      with urlopen(Request(parsed.geturl(), method="HEAD"), timeout=20) as response:
+                          return {"title": file["title"], "status": response.status,
+                              "content_type": response.headers.get("Content-Type")}
+                  except HTTPError as error:
+                      return {"title": file["title"], "status": error.code}
+                  except Exception as error:
+                      return {"title": file["title"], "status": type(error).__name__}
+              with ThreadPoolExecutor(max_workers=4) as pool:
+                  checks = list(pool.map(check, files))
+              course_results.append({"collection": entry["name"],
+                  "catalog_file_count": entry["fileCount"], "checked_files": len(checks),
+                  "status_counts": dict(Counter(str(item["status"]) for item in checks)),
+                  "failures": [item for item in checks if item["status"] != 200]})
+          print("A1_A2_MEDIA_CHECK " + json.dumps(course_results, ensure_ascii=False))
+
           PY
