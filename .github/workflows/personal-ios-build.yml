@@ -38,9 +38,26 @@ jobs:
   build:
     runs-on: macos-15
     timeout-minutes: 45
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_26.3.app/Contents/Developer
     steps:
       - name: Download source
         uses: actions/checkout@v4
+
+      - name: Check installed-language translation SDK
+        run: |
+          xcodebuild -version
+          python3 - <<'PY'
+          import os
+          from pathlib import Path
+          source = Path("ios/Runner/AppDelegate.swift").read_text()
+          start = source.index("  @available(iOS 26.0, *)\n  @MainActor\n  private func translateInstalledTexts")
+          end = source.index("  /// 取消、完成和系统错误", start)
+          function = source[start:end].replace("private func", "func", 1)
+          Path(os.environ["RUNNER_TEMP"], "translation-api.swift").write_text(
+              "import Foundation\nimport Translation\n" + function)
+          PY
+          xcrun --sdk iphoneos swiftc -typecheck -target arm64-apple-ios26.0 -sdk "$(xcrun --sdk iphoneos --show-sdk-path)" "$RUNNER_TEMP/translation-api.swift"
 
       - name: Install Flutter
         uses: subosito/flutter-action@v2
@@ -84,7 +101,7 @@ jobs:
 
       - name: Test native recording exception boundary
         run: |
-          xcrun clang -fobjc-arc -fblocks -framework Foundation -framework AVFoundation -I ios/Runner scripts/recording_tap_exception_test.m -o "$RUNNER_TEMP/recording-tap-test"
+          xcrun clang -mmacosx-version-min=15.0 -fobjc-arc -fblocks -framework Foundation -framework AVFoundation -I ios/Runner scripts/recording_tap_exception_test.m -o "$RUNNER_TEMP/recording-tap-test"
           "$RUNNER_TEMP/recording-tap-test"
 
       - name: Install locked iOS dependencies
