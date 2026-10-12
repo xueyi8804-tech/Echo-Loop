@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:audio_service/audio_service.dart';
+import 'package:echo_loop/models/media_engine_state.dart';
 import 'package:dio/dio.dart';
 import 'package:echo_loop/features/community_collections/data/community_collection_api.dart';
 import 'package:echo_loop/features/community_collections/models/community_collection_models.dart';
@@ -17,13 +18,32 @@ import '../../helpers/test_app.dart';
 
 class _Api extends Mock implements CommunityCollectionApi {}
 
-class _ReadyBackend extends FakeMediaPlayerBackend {
-  final ready = Completer<void>();
+/// 页面测试替换媒体控制器；真实引擎到URL后端的边界由上面的单元测试覆盖。
+class _PageEngine extends MediaEngine {
+  _PageEngine(this.backend);
+  final FakeMediaPlayerBackend backend;
   @override
-  Future<void> play() async {
-    await super.play();
-    if (!ready.isCompleted) ready.complete();
+  MediaEngineState build() => const MediaEngineState();
+  @override
+  Future<Duration?> loadRemoteMedia({
+    required String id, required String title, required String url, double speed = 1,
+  }) async {
+    await backend.open(url);
+    await backend.setRate(speed);
+    return backend.duration;
   }
+  @override
+  Stream<Duration> get positionStream => backend.positionStream;
+  @override
+  Stream<bool> get playingStream => backend.playingStream;
+  @override
+  Future<void> play() => backend.play();
+  @override
+  Future<void> pause() => backend.pause();
+  @override
+  Future<void> seek(Duration position) => backend.seek(position);
+  @override
+  Future<void> releaseForOwnerDispose() => backend.stop();
 }
 
 const _file = CommunityCollectionFile(
@@ -96,7 +116,7 @@ void main() {
 
   testWidgets('未登录可读取公开字幕、播放URL并点句跳转', (tester) async {
     final api = _Api();
-    final backend = _ReadyBackend();
+    final backend = FakeMediaPlayerBackend();
     when(() => api.getFileDetail('c', _file.id,
       cancelToken: any(named: 'cancelToken'))).thenAnswer((_) async =>
       const CommunityCollectionFileDetail(
@@ -110,13 +130,9 @@ void main() {
       const OnlineCoursePlayerScreen(collectionId: 'c', file: _file),
       overrides: [
         communityCollectionApiProvider.overrideWithValue(api),
-        mediaBackendFactoryProvider.overrideWithValue(() => backend),
-        mediaSessionRouterProvider.overrideWithValue(
-          MediaSessionRouter(defaultHandler: BaseAudioHandler())),
+        mediaEngineProvider.overrideWith(() => _PageEngine(backend)),
       ],
     ));
-    // 媒体会话包含真实异步初始化，等待后端就绪而不是用假时钟盲等。
-    await tester.runAsync(() => backend.ready.future.timeout(const Duration(seconds: 10)));
     await tester.pumpAndSettle();
     expect(backend.openCalls, [_file.mediaUrl]);
     expect(backend.playCalls, 1);
@@ -128,5 +144,6 @@ void main() {
     expect(backend.seekCalls.last, const Duration(seconds: 2));
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.pumpAndSettle();
+    await backend.dispose();
   });
 }
