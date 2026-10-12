@@ -25,6 +25,7 @@ class CommunityCollectionCard extends StatelessWidget {
 
   final VoidCallback onOpenDetail;
   final VoidCallback onEnroll;
+  final bool onlineOnly;
 
   const CommunityCollectionCard({
     super.key,
@@ -33,6 +34,7 @@ class CommunityCollectionCard extends StatelessWidget {
     required this.enrolling,
     required this.onOpenDetail,
     required this.onEnroll,
+    this.onlineOnly = false,
   });
 
   @override
@@ -162,6 +164,16 @@ class CommunityCollectionCard extends StatelessWidget {
     ThemeData theme,
   ) {
     const trailingWidth = 56.0;
+    if (onlineOnly) {
+      return SizedBox(
+        width: trailingWidth,
+        child: IconButton(
+          tooltip: '在线播放',
+          icon: const Icon(Icons.play_circle_outline),
+          onPressed: onOpenDetail,
+        ),
+      );
+    }
     if (enrolling) {
       return const SizedBox(
         width: trailingWidth,
