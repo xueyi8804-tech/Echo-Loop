@@ -6,6 +6,8 @@ library;
 
 import 'dart:async';
 import 'dart:convert';
+import 'package:flutter/foundation.dart';
+import '../services/apple_sentence_translation.dart';
 import '../data/personal_courses.dart';
 
 import 'package:dio/dio.dart';
@@ -221,6 +223,9 @@ class SentenceAiNotifier {
   final SentenceAiCacheDao _cacheDao;
   final SentenceAiApiClient _apiClient;
 
+  /// 个人iPhone版的系统翻译，与云端账号和额度独立。
+  final Future<String> Function(String)? _deviceTranslation;
+
   /// 额度闸：发起 L3 请求前调用。已登录但未解锁（非会员且免费试用用尽）时
   /// 抛 [AiFeatureQuotaExceededException]；会员或仍有试用额度则放行。
   /// 注入而非内联订阅依赖，保持数据层与订阅状态解耦（通过 [PremiumFeature] 中性枚举）。
@@ -264,6 +269,7 @@ class SentenceAiNotifier {
   SentenceAiNotifier({
     required SentenceAiCacheDao cacheDao,
     required SentenceAiApiClient apiClient,
+    Future<String> Function(String)? deviceTranslation,
     void Function(PremiumFeature feature)? guardFeature,
     void Function(PremiumFeature feature)? onConsumeTrial,
     Future<void> Function(
@@ -277,6 +283,7 @@ class SentenceAiNotifier {
     Future<void> Function(PremiumFeature feature)? onApiSucceeded,
   }) : _cacheDao = cacheDao,
        _apiClient = apiClient,
+       _deviceTranslation = deviceTranslation,
        _guardFeature = guardFeature,
        _onConsumeTrial = onConsumeTrial,
        _beforeApiRequest = beforeApiRequest,
@@ -336,6 +343,20 @@ class SentenceAiNotifier {
       } catch (_) {
         // L2 数据损坏或结构变更，继续到 L3 流式调用
       }
+    }
+
+    // 没有云端账号时，个人iPhone版可使用系统英译中。
+    final deviceTranslation = _deviceTranslation;
+    if ((accessToken == null || accessToken.isEmpty) &&
+        targetLanguage.toLowerCase().startsWith('zh') &&
+        deviceTranslation != null) {
+      final translated = await deviceTranslation(text);
+      if (translated.trim().isEmpty) throw const FormatException('系统译文为空');
+      final result = SentenceTranslation(translation: translated);
+      _translationCache[cacheKey] = result;
+      await _cacheDao.upsert(hash, l2Type, jsonEncode({'translation': translated}));
+      yield result;
+      return;
     }
 
     // L3: 流式 API 调用
@@ -944,6 +965,9 @@ final sentenceAiNotifierProvider = Provider<SentenceAiNotifier>((ref) {
   return SentenceAiNotifier(
     cacheDao: ref.watch(sentenceAiCacheDaoProvider),
     apiClient: ref.watch(sentenceAiApiClientProvider),
+    deviceTranslation: personalCoursesEnabled && !kIsWeb &&
+        defaultTargetPlatform == TargetPlatform.iOS
+        ? const AppleSentenceTranslation().translate : null,
     // 额度闸：已登录前提下未解锁（非会员且试用用尽）→ 抛配额超限。
     guardFeature: (feature) {
       if (!ref.read(featureAccessProvider(feature))) {
