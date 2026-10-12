@@ -130,6 +130,8 @@ class _OnlineCoursePlayerScreenState extends ConsumerState<OnlineCoursePlayerScr
     final generation = _generation;
     setState(() => _translating = index);
     try {
+      await _engine.pause();
+      if (!mounted || generation != _generation) return;
       final result = await ref.read(sentenceAiNotifierProvider)
           .getTranslationStream(_sentences[index].text, targetLanguage: 'zh-CN')
           .last;
