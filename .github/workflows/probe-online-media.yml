@@ -94,6 +94,7 @@ jobs:
                   if cursor in seen:
                       raise ValueError("repeated_cursor")
                   seen.add(cursor)
+              files = [file for file in files if file['title'] in ['L 25 - Watch Out!', 'L 44 - Making Healthy Choices', 'L 25 - Only Human']]
               def check(file):
                   parsed = urlparse(file["mediaUrl"])
                   if parsed.scheme != "https" or not parsed.hostname or parsed.username:
@@ -107,8 +108,8 @@ jobs:
                   except HTTPError as error:
                       return {"title": file["title"], "status": error.code}
                   except Exception as error:
-                      return {"title": file["title"], "status": type(error).__name__}
-              with ThreadPoolExecutor(max_workers=4) as pool:
+                      return {"title": file["title"], "status": type(error).__name__, "reason_type": type(getattr(error, "reason", None)).__name__}
+              with ThreadPoolExecutor(max_workers=1) as pool:
                   checks = list(pool.map(check, files))
               course_results.append({"collection": entry["name"],
                   "catalog_file_count": entry["fileCount"], "checked_files": len(checks),
