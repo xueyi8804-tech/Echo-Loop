@@ -18,7 +18,9 @@ String personalOnlineMediaUrl(String value) {
   final source = Uri.tryParse(value);
   if (source == null || source.scheme != 'https' ||
       source.userInfo.isNotEmpty || source.hasPort ||
-      source.host != 'cdn.echo-loop.top') return value;
+      source.host != Uri.parse(globalModelCdnBaseUrl).host) {
+    return value;
+  }
   final china = Uri.parse(chinaModelCdnBaseUrl);
   return source.replace(scheme: china.scheme, host: china.host).toString();
 }
