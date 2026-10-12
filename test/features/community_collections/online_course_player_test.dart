@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:audio_service/audio_service.dart';
 import 'package:dio/dio.dart';
 import 'package:echo_loop/features/community_collections/data/community_collection_api.dart';
@@ -15,6 +16,15 @@ import '../../helpers/shared/fake_media_player_backend.dart';
 import '../../helpers/test_app.dart';
 
 class _Api extends Mock implements CommunityCollectionApi {}
+
+class _ReadyBackend extends FakeMediaPlayerBackend {
+  final ready = Completer<void>();
+  @override
+  Future<void> play() async {
+    await super.play();
+    if (!ready.isCompleted) ready.complete();
+  }
+}
 
 const _file = CommunityCollectionFile(
   id: 'online-1', title: 'Public lesson', description: null,
@@ -86,7 +96,7 @@ void main() {
 
   testWidgets('未登录可读取公开字幕、播放URL并点句跳转', (tester) async {
     final api = _Api();
-    final backend = FakeMediaPlayerBackend();
+    final backend = _ReadyBackend();
     when(() => api.getFileDetail('c', _file.id,
       cancelToken: any(named: 'cancelToken'))).thenAnswer((_) async =>
       const CommunityCollectionFileDetail(
@@ -105,6 +115,8 @@ void main() {
           MediaSessionRouter(defaultHandler: BaseAudioHandler())),
       ],
     ));
+    // 媒体会话包含真实异步初始化，等待后端就绪而不是用假时钟盲等。
+    await tester.runAsync(() => backend.ready.future.timeout(const Duration(seconds: 10)));
     await tester.pumpAndSettle();
     expect(backend.openCalls, [_file.mediaUrl]);
     expect(backend.playCalls, 1);
