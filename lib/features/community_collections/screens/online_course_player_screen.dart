@@ -116,7 +116,9 @@ class _OnlineCoursePlayerScreenState extends ConsumerState<OnlineCoursePlayerScr
       AppLogger.log('OnlineCourse', 'load failed: ${error.runtimeType}');
       setState(() {
         _loading = false;
-        _error = '课程暂时无法播放，请检查网络后重试。若课程已下架，需要选择其他课程。';
+        _error = error is DioException && error.response?.statusCode == 403
+            ? '资源服务器拒绝访问（403）。需要恢复课程服务访问，重新登录或下载本地文件不能解决此错误。'
+            : '课程暂时无法播放，请检查网络后重试。若课程已下架，需要选择其他课程。';
       });
     }
   }
