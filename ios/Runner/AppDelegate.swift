@@ -5,6 +5,8 @@ import NaturalLanguage
 import PostHog
 import Speech
 import StoreKit
+import SwiftUI
+import Translation
 import UIKit
 import UserNotifications
 
@@ -1138,6 +1140,9 @@ private final class IOSAudioDecodeHandler: NSObject {
 
 @main
 @objc class AppDelegate: FlutterAppDelegate {
+  private var systemTranslationHost: UIViewController?
+  private var systemTranslationResult: FlutterResult?
+  private var systemTranslationChannel: FlutterMethodChannel?
   private var speechPracticeHandler: IOSSpeechPracticeHandler?
   private var textEmbeddingHandler: IOSTextEmbeddingHandler?
   private var audioDecodeHandler: IOSAudioDecodeHandler?
@@ -1163,6 +1168,7 @@ private final class IOSAudioDecodeHandler: NSObject {
     UNUserNotificationCenter.current().delegate = self
 
     let controller = window?.rootViewController as! FlutterViewController
+    configureSystemTranslation(controller: controller)
     let networkChannel = FlutterMethodChannel(
       name: "top.echo-loop/network",
       binaryMessenger: controller.binaryMessenger
@@ -1226,6 +1232,81 @@ private final class IOSAudioDecodeHandler: NSObject {
     notificationPermissionHandler = NotificationPermissionHandler(binaryMessenger: controller.binaryMessenger)
 
     return super.application(application, didFinishLaunchingWithOptions: launchOptions)
+  }
+
+
+  /// 用系统翻译界面准备语言资源；只处理个人用户主动请求的英译中。
+  private func configureSystemTranslation(controller: FlutterViewController) {
+    let channel = FlutterMethodChannel(
+      name: "top.echo-loop/system_translation",
+      binaryMessenger: controller.binaryMessenger
+    )
+    systemTranslationChannel = channel
+    channel.setMethodCallHandler { [weak self, weak controller] call, result in
+      guard call.method == "translate" else {
+        result(FlutterMethodNotImplemented)
+        return
+      }
+      guard let self, let controller else {
+        result(FlutterError(code: "unavailable", message: "翻译页面不可用", details: nil))
+        return
+      }
+      guard #available(iOS 18.0, *) else {
+        result(FlutterError(code: "unsupported", message: "系统翻译需要iOS 18或更新版本", details: nil))
+        return
+      }
+      guard self.systemTranslationResult == nil else {
+        result(FlutterError(code: "busy", message: "请等待当前翻译完成", details: nil))
+        return
+      }
+      guard let args = call.arguments as? [String: Any],
+            let text = args["text"] as? String,
+            !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+            text.count <= 5000 else {
+        result(FlutterError(code: "invalid_text", message: "句子为空或过长", details: nil))
+        return
+      }
+      var presenter: UIViewController = controller
+      while let presented = presenter.presentedViewController {
+        presenter = presented
+      }
+      self.systemTranslationResult = result
+      let host = UIHostingController(rootView: SystemEnglishChineseTranslationView(
+        text: text,
+        completion: { [weak self] response in
+          self?.finishSystemTranslation(response)
+        }
+      ))
+      host.isModalInPresentation = true
+      host.modalPresentationStyle = .pageSheet
+      self.systemTranslationHost = host
+      presenter.present(host, animated: true)
+    }
+  }
+
+  /// 取消、完成和系统错误都只回调一次，并清理当前界面。
+  private func finishSystemTranslation(_ response: Result<String, Error>) {
+    guard let result = systemTranslationResult else { return }
+    systemTranslationResult = nil
+    let host = systemTranslationHost
+    systemTranslationHost = nil
+    let finish = {
+      switch response {
+      case .success(let translated):
+        result(translated)
+      case .failure(let error):
+        result(FlutterError(
+          code: "translation_failed",
+          message: "系统翻译未完成，请准备语言资源后重试。",
+          details: error.localizedDescription
+        ))
+      }
+    }
+    if let host {
+      host.dismiss(animated: true, completion: finish)
+    } else {
+      finish()
+    }
   }
 
   private func deviceInfo() -> [String: Any] {
@@ -1340,5 +1421,38 @@ private final class IOSAudioDecodeHandler: NSObject {
     config.sessionReplayConfig.captureNetworkTelemetry = false
 
     PostHogSDK.shared.setup(config)
+  }
+}
+
+
+/// translationTask提供允许征求语言下载许可的系统会话，设备不支持时由桥接层明确报错。
+@available(iOS 18.0, *)
+private struct SystemEnglishChineseTranslationView: View {
+  let text: String
+  let completion: (Result<String, Error>) -> Void
+
+  var body: some View {
+    VStack(spacing: 20) {
+      Text("英译中").font(.headline)
+      Text(text).padding()
+      ProgressView("正在准备中文翻译…")
+      Text("首次使用可能需要同意系统准备英语和中文语言包。")
+        .font(.footnote).foregroundStyle(.secondary).padding()
+      Button("取消") {
+        completion(.failure(CancellationError()))
+      }
+    }
+    .padding()
+    .translationTask(
+      source: Locale.Language(identifier: "en"),
+      target: Locale.Language(identifier: "zh-Hans")
+    ) { session in
+      do {
+        let response = try await session.translate(text)
+        await MainActor.run { completion(.success(response.targetText)) }
+      } catch {
+        await MainActor.run { completion(.failure(error)) }
+      }
+    }
   }
 }
