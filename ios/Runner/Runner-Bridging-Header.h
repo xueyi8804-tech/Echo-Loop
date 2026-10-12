@@ -1,4 +1,6 @@
+#ifndef ECHO_LOOP_RECORDING_TAP_TEST
 #import "GeneratedPluginRegistrant.h"
+#endif
 #import <AVFoundation/AVFoundation.h>
 
 // AVAudioNode 的旧 tap 接口抛出 Objective-C 异常，Swift do/catch 无法捕获。

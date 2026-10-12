@@ -12,6 +12,8 @@ on:
       - 'test/widgets/practice/personal_bilingual_subtitle_test.dart'
       - 'lib/services/apple_sentence_translation.dart'
       - 'ios/Runner/AppDelegate.swift'
+      - 'ios/Runner/Runner-Bridging-Header.h'
+      - 'scripts/recording_tap_exception_test.m'
       - 'test/features/community_collections/online_course_player_test.dart'
       - 'test/providers/apple_sentence_translation_test.dart'
       - 'scripts/probe_public_courses.py'
@@ -79,6 +81,11 @@ jobs:
 
       - name: Check Swift syntax
         run: xcrun swiftc -frontend -parse ios/Runner/AppDelegate.swift
+
+      - name: Test native recording exception boundary
+        run: |
+          xcrun clang -fobjc-arc -fblocks -framework Foundation -framework AVFoundation -I ios/Runner scripts/recording_tap_exception_test.m -o "$RUNNER_TEMP/recording-tap-test"
+          "$RUNNER_TEMP/recording-tap-test"
 
       - name: Install locked iOS dependencies
         working-directory: ios
