@@ -28,10 +28,11 @@ private final class IOSSpeechPracticeHandler: NSObject, FlutterStreamHandler {
   private let eventChannel: FlutterEventChannel
   private var eventSink: FlutterEventSink?
 
-  // 引擎级资源（页面常驻，warmup 创建，shutdown 释放）
+  // 引擎级资源（用户开始录音时创建，shutdown 释放）
   private var audioEngine: AVAudioEngine?
   private var cachedRecognizer: SFSpeechRecognizer?
   private var isEngineRunning = false
+  private var isInputTapInstalled = false
   private var isRecording = false
 
   /// 是否启用平台语音识别（默认 false，纯录音 + VAD）。
@@ -167,75 +168,14 @@ private final class IOSSpeechPracticeHandler: NSObject, FlutterStreamHandler {
   /// 预热引擎：创建 AVAudioEngine + installTap + start，页面进入时调用。
   ///
   /// 如果权限尚未请求（notDetermined），会自动触发系统权限弹窗。
+  // 页面预热只准备识别器，不激活麦克风或安装录音 tap。
+  // 播放器会调整音频会话；提前启动录音图会在部分设备上触发原生异常。
   private func warmup(_ arguments: [String: Any]?, result: @escaping FlutterResult) {
-    let micStatus = microphonePermissionStatus()
-
-    // 纯录音模式只需要麦克风权限；识别模式还需要语音识别权限。
-    let needsSpeech = recognitionEnabled
-    let speechStatus = needsSpeech ? speechPermissionStatus() : "granted"
-
-    if micStatus == "notDetermined" || speechStatus == "notDetermined" {
-      requestPermissions(onlyMic: !needsSpeech) { [weak self] _ in
-        self?.warmup(arguments, result: result)
-      }
-      return
+    let locale = (arguments?["locale"] as? String) ?? "en-US"
+    if recognitionEnabled, speechPermissionStatus() == "granted" {
+      cachedRecognizer = SFSpeechRecognizer(locale: Locale(identifier: locale))
     }
-
-    guard micStatus == "granted", speechStatus == "granted" else {
-      result(FlutterError(
-        code: SpeechPracticeError.permissionDenied.rawValue,
-        message: "Microphone or speech permission denied",
-        details: nil
-      ))
-      return
-    }
-
-    // 已在运行则直接返回。
-    if isEngineRunning {
-      result([:])
-      return
-    }
-
-    let localeIdentifier = (arguments?["locale"] as? String) ?? "en-US"
-    if recognitionEnabled {
-      cachedRecognizer = SFSpeechRecognizer(locale: Locale(identifier: localeIdentifier))
-    }
-
-    do {
-      try configureRecordingSession()
-
-      let engine = AVAudioEngine()
-      let inputNode = engine.inputNode
-      let inputFormat = inputNode.outputFormat(forBus: 0)
-
-      inputNode.installTap(onBus: 0, bufferSize: 1024, format: inputFormat) { [weak self] buffer, _ in
-        guard let self, self.isRecording else { return }
-        self.handleVoiceActivity(buffer: buffer)
-        self.recognitionRequest?.append(buffer)
-        do {
-          let playbackBuffer = self.makeAmplifiedBuffer(from: buffer, gain: 2.2)
-          try self.audioFile?.write(from: playbackBuffer)
-        } catch {
-          self.emitError(
-            code: SpeechPracticeError.recordingFailed.rawValue,
-            message: "Failed to write recording buffer"
-          )
-        }
-      }
-
-      engine.prepare()
-      try engine.start()
-      audioEngine = engine
-      isEngineRunning = true
-      result([:])
-    } catch {
-      cleanupEngine()
-      result(FlutterError(
-        code: SpeechPracticeError.recordingFailed.rawValue,
-        message: "Failed to warmup audio engine",
-        details: error.localizedDescription
-      ))
-    }
+    result([:])
   }
 
   private func startSession(_ arguments: [String: Any]?, result: @escaping FlutterResult) {
@@ -325,7 +265,7 @@ private final class IOSSpeechPracticeHandler: NSObject, FlutterStreamHandler {
   /// 如果权限尚未请求（notDetermined），会自动触发系统权限弹窗。
   private func startSessionFull(promptId: String, locale: String, result: @escaping FlutterResult) {
     let micStatus = microphonePermissionStatus()
-    let speechStatus = speechPermissionStatus()
+    let speechStatus = recognitionEnabled ? speechPermissionStatus() : "granted"
 
     if micStatus == "notDetermined" || speechStatus == "notDetermined" {
       requestPermissions(onlyMic: !recognitionEnabled) { [weak self] _ in
@@ -369,7 +309,16 @@ private final class IOSSpeechPracticeHandler: NSObject, FlutterStreamHandler {
 
       let engine = AVAudioEngine()
       let inputNode = engine.inputNode
+      let hardwareFormat = inputNode.inputFormat(forBus: 0)
       let inputFormat = inputNode.outputFormat(forBus: 0)
+      guard AVAudioSession.sharedInstance().isInputAvailable,
+            hardwareFormat.sampleRate.isFinite, hardwareFormat.sampleRate > 0,
+            hardwareFormat.channelCount > 0,
+            inputFormat.sampleRate.isFinite, inputFormat.sampleRate > 0,
+            inputFormat.channelCount > 0 else {
+        throw NSError(domain: "EchoLoopRecording", code: 1,
+                      userInfo: [NSLocalizedDescriptionKey: "麦克风暂时不可用，请断开蓝牙耳机后重试。"])
+      }
 
       var request: SFSpeechAudioBufferRecognitionRequest?
 
@@ -408,6 +357,7 @@ private final class IOSSpeechPracticeHandler: NSObject, FlutterStreamHandler {
         }
       }
 
+      isInputTapInstalled = true
       engine.prepare()
       try engine.start()
       isEngineRunning = true
@@ -794,10 +744,13 @@ private final class IOSSpeechPracticeHandler: NSObject, FlutterStreamHandler {
   /// 引擎级清理：removeTap + engine.stop + 释放全部引擎资源 + 恢复 playback session。
   private func cleanupEngine() {
     if let engine = audioEngine {
-      engine.inputNode.removeTap(onBus: 0)
       engine.stop()
+      if isInputTapInstalled {
+        engine.inputNode.removeTap(onBus: 0)
+      }
     }
     audioEngine = nil
+    isInputTapInstalled = false
     cachedRecognizer = nil
     isEngineRunning = false
     isRecording = false
