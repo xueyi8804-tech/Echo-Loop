@@ -50,7 +50,7 @@ const _file = CommunityCollectionFile(
   id: 'online-1', title: 'Public lesson', description: null,
   mediaType: CommunityMediaType.audio, durationSec: 10, fileSizeBytes: null,
   difficulty: null, publishedAt: null, sortOrder: 0,
-  mediaUrl: 'https://example.com/public-lesson.m4a',
+  mediaUrl: 'https://cdn.echo-loop.top/courses/public-lesson.m4a',
 );
 
 void main() {
@@ -158,7 +158,7 @@ void main() {
       ],
     ));
     await tester.pumpAndSettle();
-    expect(backend.openCalls, [_file.mediaUrl]);
+    expect(backend.openCalls, ['https://cdn.echo-loop.cn/courses/public-lesson.m4a']);
     expect(backend.playCalls, 1);
     expect(find.text('A public sentence.'), findsOneWidget);
     expect(find.text('这是一句公开课程的字幕。'), findsOneWidget);
