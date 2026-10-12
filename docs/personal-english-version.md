@@ -10,7 +10,7 @@ App的母语设置应选中文；其他语言不会误显示中文译文。
 新增课程使用macOS Samantha英语合成语音，速度每分钟130词。构建时逐句生成音频，字幕时间取自实际音频长度，每句留0.6秒停顿。标题合集标明“合成语音”。它适合基础跟读，不代表真人自然对话。
 
 ## 后续自行修改
-课程正文和中文在 lib/data/personal_courses.dart；音频生成文本在 scripts/generate_personal_courses.py。修改课程时，两处英文应保持一致；变更现有课程内容时需新增安装版本，并决定如何保留用户编辑，不要清除用户数据库。
+课程英文和中文只维护 lib/data/personal_courses.dart 一份。scripts/export_personal_courses.dart 将同一份英文传给语音生成脚本，字幕和语音自动同步；变更现有课程内容时需新增安装版本，并决定如何保留用户编辑，不要清除用户数据库。
 GitHub个人编译流程会先生成音频、检查并测试，再编译iPhone包。Flutter固定3.41.5，Dart和iOS依赖沿用锁文件，没有升级依赖。
 本地Mac开发先运行语音生成脚本，再运行App。Windows可以修改源码并通过云端Mac编译；不要直接以缺少个人课程音频的源码制作发布包。
 
