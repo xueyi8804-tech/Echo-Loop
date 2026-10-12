@@ -44,10 +44,15 @@ jobs:
                       media_origin="https://" + parsed.netloc)
                   # 比较正常GET和Range GET；每次仅消费一个字节并关闭连接，不保存音频。
                   attempts = []
-                  for label, request_headers in [("normal_get", {}), ("range_get", {"Range": "bytes=0-0"})]:
+                  candidates = [("normal_get", media, {}), ("range_get", media, {"Range": "bytes=0-0"})]
+                  # 已配置的中国CDN是否也公开提供同一路径；只读验证，不假定可以替换。
+                  if parsed.hostname == "cdn.echo-loop.top":
+                      china_media = parsed._replace(netloc="cdn.echo-loop.cn").geturl()
+                      candidates.append(("configured_china_cdn", china_media, {}))
+                  for label, media_candidate, request_headers in candidates:
                       probe = {"request": label}
                       try:
-                          with urlopen(Request(media, headers=request_headers), timeout=20) as response:
+                          with urlopen(Request(media_candidate, headers=request_headers), timeout=20) as response:
                               response.read(1)
                               probe.update(status=response.status, content_type=response.headers.get("Content-Type"))
                       except HTTPError as error:
