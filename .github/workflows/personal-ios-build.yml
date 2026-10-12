@@ -3,8 +3,15 @@ name: Personal iPhone build
 on:
   workflow_dispatch:
   push:
-    branches: [personal-courses]
+    branches: [online-public-courses]
     paths:
+      - 'lib/features/community_collections/screens/**'
+      - 'lib/providers/media_engine/media_engine_provider.dart'
+      - 'lib/services/apple_sentence_translation.dart'
+      - 'ios/Runner/AppDelegate.swift'
+      - 'test/features/community_collections/online_course_player_test.dart'
+      - 'test/providers/apple_sentence_translation_test.dart'
+      - 'scripts/probe_public_courses.py'
       - 'lib/data/personal_courses.dart'
       - 'lib/services/personal_course_installer.dart'
       - 'lib/providers/sentence_ai_provider.dart'
@@ -55,6 +62,15 @@ jobs:
           flutter analyze lib/data/personal_courses.dart lib/services/personal_course_installer.dart lib/providers/sentence_ai_provider.dart lib/providers/startup_bootstrap_provider.dart test/providers/personal_translation_test.dart test/services/personal_course_installer_test.dart
           flutter test test/providers/personal_translation_test.dart test/services/personal_course_installer_test.dart test/providers/sentence_ai_provider_test.dart test/providers/startup_bootstrap_provider_test.dart
 
+      - name: Check online playback and system translation
+        run: |
+          dart format lib/features/community_collections/screens/online_course_player_screen.dart lib/services/apple_sentence_translation.dart test/features/community_collections/online_course_player_test.dart test/providers/apple_sentence_translation_test.dart
+          flutter analyze lib/features/community_collections/screens/community_collection_detail_screen.dart lib/features/community_collections/screens/online_course_player_screen.dart lib/providers/media_engine/media_engine_provider.dart lib/providers/sentence_ai_provider.dart lib/services/apple_sentence_translation.dart test/features/community_collections/online_course_player_test.dart test/providers/apple_sentence_translation_test.dart
+          flutter test test/features/community_collections/online_course_player_test.dart test/providers/apple_sentence_translation_test.dart test/features/community_collections/community_collection_detail_screen_test.dart
+
+      - name: Probe public online courses
+        run: python3 scripts/probe_public_courses.py
+
       - name: Install locked iOS dependencies
         working-directory: ios
         run: |
@@ -91,6 +107,7 @@ jobs:
             personal-build/*.ipa
             personal-build/*.txt
             personal-build/*.lock
+            personal-build/*.json
           if-no-files-found: error
           retention-days: 7
 
@@ -99,6 +116,8 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: Personal-iPhone-build-diagnostics
-          path: personal-build/*.txt
+          path: |
+            personal-build/*.txt
+            personal-build/*.json
           if-no-files-found: warn
           retention-days: 7
