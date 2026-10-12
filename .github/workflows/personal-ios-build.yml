@@ -10,9 +10,14 @@ on:
       - 'lib/providers/sentence_ai_provider.dart'
       - 'lib/providers/startup_bootstrap_provider.dart'
       - 'scripts/generate_personal_courses.py'
+      - 'scripts/export_personal_courses.dart'
       - 'test/providers/personal_translation_test.dart'
       - 'test/services/personal_course_installer_test.dart'
       - '.github/workflows/personal-ios-build.yml'
+
+concurrency:
+  group: personal-iphone-${{ github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
@@ -48,7 +53,7 @@ jobs:
       - name: Check personal course changes
         run: |
           flutter analyze lib/data/personal_courses.dart lib/services/personal_course_installer.dart lib/providers/sentence_ai_provider.dart lib/providers/startup_bootstrap_provider.dart test/providers/personal_translation_test.dart test/services/personal_course_installer_test.dart
-          flutter test test/providers/personal_translation_test.dart test/services/personal_course_installer_test.dart test/providers/sentence_ai_provider_test.dart
+          flutter test test/providers/personal_translation_test.dart test/services/personal_course_installer_test.dart test/providers/sentence_ai_provider_test.dart test/providers/startup_bootstrap_provider_test.dart
 
       - name: Install locked iOS dependencies
         working-directory: ios
@@ -57,7 +62,7 @@ jobs:
           pod _1.16.2_ install
 
       - name: Compile for iPhone
-        run: flutter build ios --release --no-codesign --flavor prod --build-number=${{ github.run_number }}
+        run: flutter build ios --release --no-codesign --flavor prod --dart-define=PERSONAL_COURSES=true --build-number=${{ github.run_number }}
 
       - name: Package unsigned IPA
         run: |
