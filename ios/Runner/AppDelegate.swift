@@ -165,7 +165,7 @@ private final class IOSSpeechPracticeHandler: NSObject, FlutterStreamHandler {
     }
   }
 
-  /// 预热引擎：创建 AVAudioEngine + installTap + start，页面进入时调用。
+  /// 页面预热：仅准备识别器；录音图在用户开始录音时创建。
   ///
   /// 如果权限尚未请求（notDetermined），会自动触发系统权限弹窗。
   // 页面预热只准备识别器，不激活麦克风或安装录音 tap。
@@ -299,6 +299,9 @@ private final class IOSSpeechPracticeHandler: NSObject, FlutterStreamHandler {
 
     cleanupSentenceState(cancelRecognition: true)
     cleanupEngine()
+    if recognitionEnabled {
+      cachedRecognizer = SFSpeechRecognizer(locale: Locale(identifier: locale))
+    }
 
     let fileName = sanitizedFileName(promptId)
     let fileURL = URL(fileURLWithPath: NSTemporaryDirectory())
