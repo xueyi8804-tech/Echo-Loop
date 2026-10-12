@@ -70,7 +70,10 @@ class _OnlineCoursePlayerScreenState extends ConsumerState<OnlineCoursePlayerScr
 
   Future<void> _load() async {
     final generation = ++_generation;
-    setState(() { _loading = true; _error = null; _notice = null; });
+    setState(() {
+      _loading = true; _error = null; _notice = null;
+      _translations.clear();
+    });
     try {
       var file = widget.file;
       List<CommunitySubtitleSentence> sentences = const [];

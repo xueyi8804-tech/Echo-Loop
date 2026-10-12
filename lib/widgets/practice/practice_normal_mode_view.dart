@@ -13,6 +13,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../data/personal_courses.dart';
 import '../../providers/sentence_ai_provider.dart';
 
+import '../../l10n/app_localizations.dart';
+import '../../theme/app_theme.dart';
+import '../../widgets/common/tappable_wrapper.dart';
+import 'selectable_sentence_text.dart';
+
 final practiceChineseSubtitleProvider =
     FutureProvider.autoDispose.family<String, String>((ref, text) async {
   final result = await ref.read(sentenceAiNotifierProvider)
@@ -43,10 +48,6 @@ class _BilingualSubtitle extends ConsumerWidget {
   }
 }
 
-import '../../l10n/app_localizations.dart';
-import '../../theme/app_theme.dart';
-import '../../widgets/common/tappable_wrapper.dart';
-import 'selectable_sentence_text.dart';
 
 /// 普通模式视图（文字遮盖 / 偷看）
 class PracticeNormalModeView extends StatelessWidget {
