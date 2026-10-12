@@ -1,0 +1,70 @@
+name: Diagnose public course media
+on:
+  push:
+    branches: [online-public-courses]
+    paths: ['.github/workflows/probe-online-media.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Probe anonymous course and media access without saving audio
+        run: |
+          python3 - <<'PY'
+          import json
+          from urllib.request import Request, urlopen
+          from urllib.parse import urlparse, quote
+          from urllib.error import HTTPError
+          import xml.etree.ElementTree as ET
+
+          headers = {"x-app-platform": "ios", "x-app-version": "1.0.40"}
+          def get_json(url):
+              with urlopen(Request(url, headers=headers), timeout=20) as response:
+                  return json.load(response)
+
+          results = []
+          for origin in ["https://www.echo-loop.cn", "https://www.echo-loop.top"]:
+              result = {"api_origin": origin}
+              try:
+                  catalog = get_json(origin + "/api/v2/collections")
+                  entry = next(item for item in catalog["items"] if item["name"].startswith("A1"))
+                  prefix = origin + "/api/v2/collections/" + quote(entry["id"], safe="")
+                  collection = get_json(prefix)
+                  file = collection["items"][0]
+                  detail = get_json(prefix + "/files/" + quote(file["id"], safe=""))
+                  media = detail["file"]["mediaUrl"]
+                  parsed = urlparse(media)
+                  if parsed.scheme != "https" or not parsed.hostname or parsed.username:
+                      raise ValueError("invalid_public_media_url")
+                  result.update(collection=entry["name"], file=file["title"],
+                      sentence_count=len(detail["subtitle"]["sentences"]),
+                      media_origin="https://" + parsed.netloc)
+                  # 比较正常GET和Range GET；每次仅消费一个字节并关闭连接，不保存音频。
+                  attempts = []
+                  for label, request_headers in [("normal_get", {}), ("range_get", {"Range": "bytes=0-0"})]:
+                      probe = {"request": label}
+                      try:
+                          with urlopen(Request(media, headers=request_headers), timeout=20) as response:
+                              response.read(1)
+                              probe.update(status=response.status, content_type=response.headers.get("Content-Type"))
+                      except HTTPError as error:
+                          probe["status"] = error.code
+                          # 仅记录XML错误代码，避免日志泄露临时媒体URL或签名参数。
+                          body = error.read(2048)
+                          try:
+                              root = ET.fromstring(body)
+                              probe["error_code"] = root.findtext("Code")
+                          except ET.ParseError:
+                              pass
+                      except Exception as error:
+                          probe["error_type"] = type(error).__name__
+                      attempts.append(probe)
+                  result["media_attempts"] = attempts
+              except Exception as error:
+                  result.update(error_type=type(error).__name__, status=getattr(error, "code", None))
+              results.append(result)
+          print(json.dumps(results, ensure_ascii=False))
+          PY
